@@ -4,7 +4,7 @@ A minimal AI coding agent implementation in Rust that demonstrates the core agen
 
 ## Overview
 
-This is a Rust port of a Python-based AI agent that uses the Anthropic API to create an interactive coding assistant. The agent can execute shell commands and iteratively improve its responses based on tool outputs.
+This is a Rust port of a Python-based AI agent that uses the DeepSeek API to create an interactive coding assistant. The agent can execute shell commands and iteratively improve its responses based on tool outputs.
 
 ## The Agent Loop
 
@@ -43,7 +43,7 @@ User Prompt → LLM → Tool Execute → Results
 ### Prerequisites
 
 - Rust 1.70+
-- Anthropic API key
+- DeepSeek API key
 
 ### Setup
 
@@ -54,14 +54,14 @@ cp .env.example .env
 
 2. Edit `.env` with your API key:
 ```
-ANTHROPIC_API_KEY=your_key_here
-MODEL_ID=claude-sonnet-4-20250514
+DEEPSEEK_API_KEY=your_key_here
+MODEL_ID=deepseek-chat
 ```
 
 3. Build and run:
 ```bash
 cargo build --release
-./target/release/rust_toy_agent
+./target/release/s01_agent_loop
 ```
 
 ### Interactive Session
@@ -71,7 +71,7 @@ cargo build --release
 ║          S01 Agent Loop - Interactive Session                ║
 ╚══════════════════════════════════════════════════════════════╝
 
-  model        claude-sonnet-4-20250514
+  model        deepseek-chat
   workdir      /path/to/project
   tools        bash
   max_tokens   8000
@@ -85,8 +85,7 @@ Type `q`, `exit`, or press Enter with empty input to quit.
 ## Code Structure
 
 - `src/lib.rs` - Shared utilities (API client, bash execution, file tools)
-- `src/main.rs` - Agent loop implementation with tests
-- `s01_agent_loop.py` - Original Python version for reference
+- `src/s01_agent_loop.rs` - Agent loop implementation with tests
 
 ## Testing
 
@@ -103,15 +102,24 @@ Tests cover:
 - Output handling
 - Message history structure
 
-## Comparison with Python
+### Test Results
 
-| Feature | Python | Rust |
-|---------|--------|------|
-| Tool Support | bash only | bash only |
-| Safety Checks | ✓ | ✓ |
-| Timeout | 120s | 120s |
-| Output Limit | 50KB | 50KB |
-| Async | No | Yes (tokio) |
+```
+running 11 tests
+test tests::test_exit_commands ... ok
+test tests::test_messages_append_structure ... ok
+test tests::test_run_bash_dangerous_blocked ... ok
+test tests::test_stop_reason_check ... ok
+test tests::test_system_prompt_format ... ok
+test tests::test_tool_result_structure ... ok
+test tests::test_tool_use_block_parsing ... ok
+test tests::test_tools_json_parsing ... ok
+test tests::test_run_bash_simple_echo ... ok
+test tests::test_run_bash_no_output ... ok
+test tests::test_run_bash_captures_stderr ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+```
 
 ## License
 
