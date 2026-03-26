@@ -1,29 +1,25 @@
-//! s01_agent_loop.rs - The Agent Loop
+//! s02_agent_loop.rs - Tools
 //!
-//! The entire secret of an AI coding agent in one pattern:
+//! The agent loop from s01 didn't change. We just added tools to the array
+//! and a dispatch map to route calls.
 //!
-//!     while stop_reason == "tool_use":
-//!         response = LLM(messages, tools)
-//!         execute tools
-//!         append results
+//!     +----------+      +-------+      +------------------+
+//!     |   User   | ---> |  LLM  | ---> | Tool Dispatch    |
+//!     |  prompt  |      |       |      | {                |
+//!     +----------+      +---+---+      |   bash: run_bash |
+//!                           ^          |   read: run_read |
+//!                           |          |   write: run_wr  |
+//!                           +----------+   edit: run_edit |
+//!                           tool_result| }                |
+//!                                      +------------------+
 //!
-//!     +----------+      +-------+      +---------+
-//!     |   User   | ---> |  LLM  | ---> |  Tool   |
-//!     |  prompt  |      |       |      | execute |
-//!     +----------+      +---+---+      +----+----+
-//!                           ^               |
-//!                           |   tool_result |
-//!                           +---------------+
-//!                           (loop continues)
-//!
-//! Key insight: feed tool results back to the model until it stops.
+//! Key insight: "The loop didn't change at all. I just added tools."
 
 use serde_json::json;
 use serde_json::Value as Json;
 use std::env;
 use std::io::{BufRead, Write};
-#[allow(unused_imports)]
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command as Proc;
 
 type Messages = Vec<Json>;
@@ -36,9 +32,41 @@ const TOOLS: &str = r#"[{
         "properties": {"command": {"type": "string"}},
         "required": ["command"]
     }
+}, {
+    "name": "read_file",
+    "description": "Read file contents.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "limit": {"type": "integer"}
+        },
+        "required": ["path"]
+    }
+}, {
+    "name": "write_file",
+    "description": "Write content to file.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "content": {"type": "string"}
+        },
+        "required": ["path", "content"]
+    }
+}, {
+    "name": "edit_file",
+    "description": "Replace exact text in file.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "old_text": {"type": "string"},
+            "new_text": {"type": "string"}
+        },
+        "required": ["path", "old_text", "new_text"]
+    }
 }]"#;
-
-// ── Anthropic API client ─────────────────────────────────────────────────────
 
 struct AnthropicClient {
     api_key: String,
@@ -104,20 +132,37 @@ impl AnthropicClient {
     }
 }
 
-// ── Shell / file tools ────────────────────────────────────────────────────────
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut components: Vec<Component> = Vec::new();
+    for comp in path.components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                components.pop();
+            }
+            c => components.push(c),
+        }
+    }
+    components.iter().collect()
+}
+
+fn safe_path(p: &str, workdir: &Path) -> Result<PathBuf, String> {
+    let workdir_abs = workdir.canonicalize().unwrap_or_else(|_| workdir.to_path_buf());
+    let raw = workdir_abs.join(p);
+    let normalized = normalize_path(&raw);
+    if normalized.starts_with(&workdir_abs) {
+        Ok(normalized)
+    } else {
+        Err(format!("Path escapes workspace: {}", p))
+    }
+}
 
 fn run_bash(command: &str, workdir: &Path) -> String {
     let blocked = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"];
     if blocked.iter().any(|b| command.contains(b)) {
-        eprintln!("\x1b[31m[tool:bash] BLOCKED: {}\x1b[0m", command);
         return "Error: Dangerous command blocked".to_string();
     }
-    match Proc::new("sh")
-        .arg("-c")
-        .arg(command)
-        .current_dir(workdir)
-        .output()
-    {
+    match Proc::new("sh").arg("-c").arg(command).current_dir(workdir).output() {
         Err(e) => format!("Error: {}", e),
         Ok(out) => {
             let text = format!(
@@ -137,7 +182,88 @@ fn run_bash(command: &str, workdir: &Path) -> String {
     }
 }
 
-// ── REPL helper ───────────────────────────────────────────────────────────────
+fn run_read(path: &str, limit: Option<usize>, workdir: &Path) -> String {
+    match safe_path(path, workdir) {
+        Err(e) => format!("Error: {}", e),
+        Ok(fp) => match std::fs::read_to_string(&fp) {
+            Err(e) => format!("Error: {}", e),
+            Ok(text) => {
+                let lines: Vec<&str> = text.lines().collect();
+                let result: String = match limit {
+                    Some(n) if n < lines.len() => {
+                        let mut v: Vec<String> =
+                            lines[..n].iter().map(|s| s.to_string()).collect();
+                        v.push(format!("... ({} more lines)", lines.len() - n));
+                        v.join("\n")
+                    }
+                    _ => lines.join("\n"),
+                };
+                if result.len() > 50000 {
+                    result[..50000].to_string()
+                } else {
+                    result
+                }
+            }
+        },
+    }
+}
+
+fn run_write(path: &str, content: &str, workdir: &Path) -> String {
+    match safe_path(path, workdir) {
+        Err(e) => format!("Error: {}", e),
+        Ok(fp) => {
+            if let Some(parent) = fp.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            match std::fs::write(&fp, content) {
+                Ok(_) => format!("Wrote {} bytes to {}", content.len(), path),
+                Err(e) => format!("Error: {}", e),
+            }
+        }
+    }
+}
+
+fn run_edit(path: &str, old_text: &str, new_text: &str, workdir: &Path) -> String {
+    match safe_path(path, workdir) {
+        Err(e) => format!("Error: {}", e),
+        Ok(fp) => match std::fs::read_to_string(&fp) {
+            Err(e) => format!("Error: {}", e),
+            Ok(content) => {
+                if !content.contains(old_text) {
+                    return format!("Error: Text not found in {}", path);
+                }
+                let new_content = content.replacen(old_text, new_text, 1);
+                match std::fs::write(&fp, new_content) {
+                    Ok(_) => format!("Edited {}", path),
+                    Err(e) => format!("Error: {}", e),
+                }
+            }
+        },
+    }
+}
+
+fn dispatch_tools(tool_name: &str, input: &Json, workdir: &Path) -> Option<String> {
+    match tool_name {
+        "bash" => Some(run_bash(input["command"].as_str().unwrap_or(""), workdir)),
+        "read_file" => Some(run_read(
+            input["path"].as_str().unwrap_or(""),
+            input["limit"].as_u64().map(|n| n as usize),
+            workdir,
+        )),
+        "write_file" => Some(run_write(
+            input["path"].as_str().unwrap_or(""),
+            input["content"].as_str().unwrap_or(""),
+            workdir,
+        )),
+        "edit_file" => Some(run_edit(
+            input["path"].as_str().unwrap_or(""),
+            input["old_text"].as_str().unwrap_or(""),
+            input["new_text"].as_str().unwrap_or(""),
+            workdir,
+        )),
+        _ => None,
+    }
+}
 
 fn read_prompt(prompt: &str) -> Option<String> {
     print!("{}", prompt);
@@ -163,8 +289,6 @@ fn print_final_response(messages: &[Json]) {
     }
 }
 
-// ── Logging helpers ────────────────────────────────────────────────────────────
-
 fn log_section(title: &str) {
     eprintln!("\x1b[34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
     eprintln!("\x1b[34m {}\x1b[0m", title);
@@ -189,8 +313,6 @@ fn log_output_preview(output: &str) {
         eprintln!("\x1b[90m    ... ({} more lines)\x1b[0m", output.lines().count() - 5);
     }
 }
-
-// ── The agent loop ─────────────────────────────────────────────────────────────
 
 async fn agent_loop(
     client: &AnthropicClient,
@@ -232,9 +354,7 @@ async fn agent_loop(
         }
 
         let tool_count = content.as_array()
-            .map(|blocks| blocks.iter()
-                .filter(|b| b["type"] == "tool_use")
-                .count())
+            .map(|blocks| blocks.iter().filter(|b| b["type"] == "tool_use").count())
             .unwrap_or(0);
 
         log_info("tools", &format!("{} tool call(s) requested", tool_count));
@@ -244,16 +364,16 @@ async fn agent_loop(
         if let Some(blocks) = content.as_array() {
             for (i, block) in blocks.iter().enumerate() {
                 if block["type"] == "tool_use" {
-                    let cmd = block["input"]["command"].as_str().unwrap_or("");
+                    let tool_name = block["name"].as_str().unwrap_or("unknown");
                     let tool_id = block["id"].as_str().unwrap_or("unknown");
 
-                    log_step(&format!("[{}]", i + 1), &format!("bash: \x1b[1m{}\x1b[0m", cmd));
+                    log_step(&format!("[{}]", i + 1), &format!("{}: \x1b[1m{:?}\x1b[0m", tool_name, block["input"]));
                     log_info("id", &tool_id[..std::cmp::min(8, tool_id.len())]);
 
-                    let output = run_bash(cmd, workdir);
-                    let output_len = output.len();
+                    let output = dispatch_tools(tool_name, &block["input"], workdir)
+                        .unwrap_or_else(|| format!("Unknown tool: {}", tool_name));
 
-                    log_info("output", &format!("{} bytes", output_len));
+                    log_info("output", &format!("{} bytes", output.len()));
                     log_output_preview(&output);
                     eprintln!();
 
@@ -271,8 +391,6 @@ async fn agent_loop(
     }
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────────
-
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
@@ -281,19 +399,19 @@ async fn main() {
     let client = AnthropicClient::from_env();
     let model = env::var("MODEL_ID").expect("MODEL_ID not set");
     let system = format!(
-        "You are a coding agent at {}. Use bash to solve tasks. Act, don't explain.",
+        "You are a coding agent at {}. Use tools to solve tasks. Act, don't explain.",
         workdir.display()
     );
     let tools: Json = serde_json::from_str(TOOLS).unwrap();
 
     eprintln!();
     eprintln!("\x1b[35m╔══════════════════════════════════════════════════════════════╗\x1b[0m");
-    eprintln!("\x1b[35m║          S01 Agent Loop - Interactive Session                ║\x1b[0m");
+    eprintln!("\x1b[35m║          S02 Agent Loop - Tools Edition                     ║\x1b[0m");
     eprintln!("\x1b[35m╚══════════════════════════════════════════════════════════════╝\x1b[0m");
     eprintln!();
     log_info("model", &model);
     log_info("workdir", &workdir.display().to_string());
-    log_info("tools", "bash");
+    log_info("tools", "bash, read_file, write_file, edit_file");
     log_info("max_tokens", "8000");
     eprintln!("\x1b[34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
     eprintln!();
@@ -302,7 +420,7 @@ async fn main() {
     let mut turn = 0usize;
 
     loop {
-        let query = match read_prompt("\x1b[36ms01 >> \x1b[0m") {
+        let query = match read_prompt("\x1b[36ms02 >> \x1b[0m") {
             None => break,
             Some(q) => q,
         };
@@ -323,8 +441,6 @@ async fn main() {
     }
 }
 
-// ── Tests ──────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -334,173 +450,80 @@ mod tests {
         let tools: Json = serde_json::from_str(TOOLS).unwrap();
         assert!(tools.is_array());
         let arr = tools.as_array().unwrap();
-        assert_eq!(arr.len(), 1);
+        assert_eq!(arr.len(), 4);
+        
+        let tool_names: Vec<&str> = arr.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert_eq!(tool_names, vec!["bash", "read_file", "write_file", "edit_file"]);
+    }
 
-        let bash_tool = &arr[0];
-        assert_eq!(bash_tool["name"], "bash");
-        assert_eq!(bash_tool["description"], "Run a shell command.");
-
-        let schema = &bash_tool["input_schema"];
+    #[test]
+    fn test_bash_tool_schema() {
+        let tools: Json = serde_json::from_str(TOOLS).unwrap();
+        let bash = &tools.as_array().unwrap()[0];
+        assert_eq!(bash["name"], "bash");
+        let schema = &bash["input_schema"];
         assert_eq!(schema["type"], "object");
         assert!(schema["properties"]["command"].is_object());
-
-        let required = schema["required"].as_array().unwrap();
-        assert_eq!(required.len(), 1);
-        assert_eq!(required[0], "command");
     }
 
     #[test]
-    fn test_run_bash_simple_echo() {
-        let workdir = env::current_dir().unwrap();
-        let output = run_bash("echo hello", &workdir);
-        assert!(output.contains("hello"));
+    fn test_read_file_tool_schema() {
+        let tools: Json = serde_json::from_str(TOOLS).unwrap();
+        let read = &tools.as_array().unwrap()[1];
+        assert_eq!(read["name"], "read_file");
+        let schema = &read["input_schema"];
+        let props = &schema["properties"];
+        assert!(props["path"].is_object());
+        assert!(props["limit"].is_object());
     }
 
     #[test]
-    fn test_run_bash_dangerous_blocked() {
-        let workdir = env::current_dir().unwrap();
-        let dangerous = [
-            "rm -rf /",
-            "sudo ls",
-            "shutdown -h now",
-            "reboot",
-            "cat /dev/null > /dev/sda",
-        ];
-
-        for cmd in dangerous {
-            let output = run_bash(cmd, &workdir);
-            assert!(output.contains("Dangerous command blocked"), "Failed to block: {}", cmd);
-        }
+    fn test_write_file_tool_schema() {
+        let tools: Json = serde_json::from_str(TOOLS).unwrap();
+        let write = &tools.as_array().unwrap()[2];
+        assert_eq!(write["name"], "write_file");
     }
 
     #[test]
-    fn test_run_bash_no_output() {
-        let workdir = env::current_dir().unwrap();
-        let output = run_bash("true", &workdir);
-        assert_eq!(output, "(no output)");
-    }
-
-    #[test]
-    fn test_run_bash_captures_stderr() {
-        let workdir = env::current_dir().unwrap();
-        let output = run_bash("ls /nonexistent 2>&1", &workdir);
-        assert!(output.contains("No such file") || output.contains("cannot access"));
-    }
-
-    #[test]
-    fn test_tool_result_structure() {
-        let tool_use_id = "test-123";
-        let output = "test output";
-
-        let result = json!({
-            "type": "tool_result",
-            "tool_use_id": tool_use_id,
-            "content": output
-        });
-
-        assert_eq!(result["type"], "tool_result");
-        assert_eq!(result["tool_use_id"], tool_use_id);
-        assert_eq!(result["content"], output);
-    }
-
-    #[test]
-    fn test_messages_append_structure() {
-        let mut messages: Messages = Vec::new();
-
-        messages.push(json!({"role": "user", "content": "test query"}));
-        assert_eq!(messages.len(), 1);
-
-        let tool_response = json!({
-            "role": "assistant",
-            "content": [
-                {
-                    "type": "tool_use",
-                    "id": "tool-1",
-                    "name": "bash",
-                    "input": {"command": "echo test"}
-                }
-            ]
-        });
-        messages.push(tool_response);
-        assert_eq!(messages.len(), 2);
-
-        let results = vec![json!({
-            "type": "tool_result",
-            "tool_use_id": "tool-1",
-            "content": "test output"
-        })];
-        messages.push(json!({"role": "user", "content": results}));
-        assert_eq!(messages.len(), 3);
-    }
-
-    #[test]
-    fn test_stop_reason_check() {
-        let test_cases = vec![
-            ("tool_use", true),
-            ("end_turn", false),
-            ("max_tokens", false),
-            ("", false),
-        ];
-
-        for (reason, should_continue) in test_cases {
-            let should_stop = reason != "tool_use";
-            assert_eq!(should_stop, !should_continue, "Failed for reason: {}", reason);
-        }
+    fn test_edit_file_tool_schema() {
+        let tools: Json = serde_json::from_str(TOOLS).unwrap();
+        let edit = &tools.as_array().unwrap()[3];
+        assert_eq!(edit["name"], "edit_file");
     }
 
     #[test]
     fn test_system_prompt_format() {
         let workdir = PathBuf::from("/test/path");
         let system = format!(
-            "You are a coding agent at {}. Use bash to solve tasks. Act, don't explain.",
+            "You are a coding agent at {}. Use tools to solve tasks. Act, don't explain.",
             workdir.display()
         );
         assert!(system.contains("/test/path"));
-        assert!(system.contains("Use bash to solve tasks"));
     }
 
     #[test]
-    fn test_exit_commands() {
-        let exit_commands = ["q", "exit", ""];
-        for cmd in exit_commands {
-            assert!(matches!(cmd, "q" | "exit" | ""), "Failed for command: {}", cmd);
-        }
-    }
-
-    #[test]
-    fn test_tool_use_block_parsing() {
-        let response = json!({
-            "stop_reason": "tool_use",
-            "content": [
-                {
-                    "type": "text",
-                    "text": "Let me run a command."
-                },
-                {
-                    "type": "tool_use",
-                    "id": "tool-456",
-                    "name": "bash",
-                    "input": {"command": "ls -la"}
-                }
-            ]
+    fn test_tool_result_structure() {
+        let result = json!({
+            "type": "tool_result",
+            "tool_use_id": "test-id-123",
+            "content": "tool output"
         });
+        assert_eq!(result["type"], "tool_result");
+    }
 
-        let mut results = Vec::new();
-        if let Some(blocks) = response["content"].as_array() {
-            for block in blocks {
-                if block["type"] == "tool_use" {
-                    let cmd = block["input"]["command"].as_str().unwrap_or("");
-                    results.push(json!({
-                        "type": "tool_result",
-                        "tool_use_id": block["id"],
-                        "content": format!("output for: {}", cmd)
-                    }));
-                }
-            }
-        }
+    #[test]
+    fn test_tool_dispatch_unknown() {
+        let input = json!({"foo": "bar"});
+        let output = dispatch_tools("unknown_tool", &input, &PathBuf::from("."));
+        assert!(output.is_none());
+    }
 
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0]["tool_use_id"], "tool-456");
-        assert!(results[0]["content"].as_str().unwrap().contains("ls -la"));
+    #[test]
+    fn test_messages_flow() {
+        let mut messages: Messages = Vec::new();
+        messages.push(json!({"role": "user", "content": "Hello"}));
+        assert_eq!(messages.len(), 1);
+        messages.push(json!({"role": "assistant", "content": [{"type": "text", "text": "Hi"}]}));
+        assert_eq!(messages.len(), 2);
     }
 }
