@@ -373,4 +373,16 @@ mod tests {
         assert!(!did_todo);
         assert!(output.is_none());
     }
+
+    #[test]
+    fn test_tool_result_structure() {
+        let result = serde_json::json!({
+            "type": "tool_result",
+            "tool_use_id": "abc123",
+            "content": "output"
+        });
+        assert_eq!(result["type"], "tool_result");
+        assert!(result["tool_use_id"].is_string());
+        assert!(result["content"].is_string());
+    }
 }
