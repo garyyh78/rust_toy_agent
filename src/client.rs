@@ -5,6 +5,7 @@
 use serde_json::Value as Json;
 use std::env;
 
+/// Holds API credentials and a shared HTTP client for reuse across requests.
 pub struct AnthropicClient {
     pub api_key: String,
     pub base_url: String,
@@ -12,6 +13,8 @@ pub struct AnthropicClient {
 }
 
 impl AnthropicClient {
+    /// Build a client from environment variables (ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL).
+    /// Falls back to the official Anthropic endpoint if no base URL is set.
     pub fn from_env() -> Self {
         let base_url = env::var("ANTHROPIC_BASE_URL")
             .unwrap_or_else(|_| "https://api.anthropic.com".to_string());
@@ -23,6 +26,7 @@ impl AnthropicClient {
         }
     }
 
+    /// Build a client with explicit credentials (useful for tests or custom setups).
     pub fn new(api_key: &str, base_url: &str) -> Self {
         Self {
             api_key: api_key.to_string(),
@@ -31,6 +35,8 @@ impl AnthropicClient {
         }
     }
 
+    /// Send a messages request to the Anthropic API.
+    /// Returns the full JSON response; panics on HTTP or parse errors.
     pub async fn create_message(
         &self,
         model: &str,
@@ -39,6 +45,7 @@ impl AnthropicClient {
         tools: Option<&Json>,
         max_tokens: u32,
     ) -> Json {
+        // Build the request body, omitting optional fields when empty
         let url = format!("{}/v1/messages", self.base_url);
         let mut body = serde_json::json!({
             "model": model,
@@ -56,6 +63,7 @@ impl AnthropicClient {
             }
         }
 
+        // Send the HTTP POST with required Anthropic headers
         let resp = self
             .client
             .post(&url)
@@ -67,6 +75,7 @@ impl AnthropicClient {
             .await
             .expect("HTTP request failed");
 
+        // Check for API errors and panic with details
         let status = resp.status();
         let text = resp.text().await.expect("Failed to read response body");
         if !status.is_success() {
@@ -76,6 +85,8 @@ impl AnthropicClient {
         serde_json::from_str(&text).expect("Failed to parse API response")
     }
 
+    /// Build the request body JSON without sending it.
+    /// Useful for inspecting or logging what would be sent.
     pub fn build_request_body(
         model: &str,
         system: Option<&str>,
@@ -108,8 +119,6 @@ mod tests {
 
     #[test]
     fn test_from_env_defaults() {
-        // When env vars are not set, from_env should still construct
-        // (api_key will be empty, base_url will be default)
         let client = AnthropicClient::from_env();
         assert_eq!(client.base_url, "https://api.anthropic.com");
     }

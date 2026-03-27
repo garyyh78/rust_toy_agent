@@ -8,6 +8,14 @@ use serde_json::Value as Json;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+// -- Limits --
+
+const MAX_TODO_ITEMS: usize = 20;
+
+// -- Tool JSON schema --
+// This constant is sent to the Anthropic API so the model knows
+// what tools are available and what arguments they expect.
+
 pub const TOOLS: &str = r#"[{
     "name": "bash",
     "description": "Run a shell command.",
@@ -77,6 +85,9 @@ pub const TOOLS: &str = r#"[{
 }]"#;
 
 // -- TodoManager --
+// The LLM calls the "todo" tool to update this state.
+// Validation enforces: max 20 items, non-empty text,
+// one in_progress at a time, valid status enum.
 
 #[derive(Debug, Clone)]
 pub struct TodoItem {
@@ -94,9 +105,10 @@ impl TodoManager {
         Self { items: Vec::new() }
     }
 
+    /// Validate and replace the full todo list. Returns rendered output on success.
     pub fn update(&mut self, items_json: &[Json]) -> Result<String, String> {
-        if items_json.len() > 20 {
-            return Err("Max 20 todos allowed".to_string());
+        if items_json.len() > MAX_TODO_ITEMS {
+            return Err(format!("Max {} todos allowed", MAX_TODO_ITEMS));
         }
         let mut validated = Vec::new();
         let mut in_progress_count = 0usize;
@@ -139,6 +151,7 @@ impl TodoManager {
         Ok(self.render())
     }
 
+    /// Render the todo list as a human-readable string with status markers.
     pub fn render(&self) -> String {
         if self.items.is_empty() {
             return "No todos.".to_string();
@@ -161,6 +174,11 @@ impl TodoManager {
         lines.join("\n")
     }
 }
+
+// -- Tool dispatch --
+// Routes a tool call by name to the appropriate handler.
+// Returns `(output_string, did_use_todo)` so the agent loop
+// can track whether the todo tool was invoked.
 
 /// Dispatch a tool call by name. Returns `(output, did_use_todo)`.
 pub fn dispatch_tools(
@@ -219,6 +237,8 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
+    // -- TOOLS schema validation --
+
     #[test]
     fn test_tools_json_parsing() {
         let tools: Json = serde_json::from_str(TOOLS).unwrap();
@@ -267,6 +287,8 @@ mod tests {
         assert_eq!(schema["type"], "object");
         assert!(schema["properties"]["command"].is_object());
     }
+
+    // -- TodoManager validation --
 
     #[test]
     fn test_todo_manager_basic() {
@@ -344,6 +366,8 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("invalid status"));
     }
+
+    // -- dispatch_tools routing --
 
     #[test]
     fn test_dispatch_todo_tool() {

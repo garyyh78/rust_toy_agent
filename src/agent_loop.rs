@@ -10,9 +10,12 @@ use serde_json::Value as Json;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+/// The conversation history is a vector of JSON message objects.
 pub type Messages = Vec<Json>;
 
 // -- Logging helpers --
+// Colored stderr output for agent loop diagnostics.
+// All logging goes to stderr so stdout stays clean for the REPL.
 
 pub fn log_section(title: &str) {
     eprintln!("\x1b[34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
@@ -28,6 +31,7 @@ pub fn log_step(step: &str, detail: &str) {
     eprintln!("\x1b[33m  {}\x1b[0m {}", step, detail);
 }
 
+/// Show first 5 lines of tool output, then a count of remaining lines.
 pub fn log_output_preview(output: &str) {
     let lines: Vec<&str> = output.lines().take(5).collect();
     let truncated = output.lines().count() > 5;
@@ -43,6 +47,9 @@ pub fn log_output_preview(output: &str) {
 }
 
 // -- Agent loop with nag reminder --
+// Each iteration: call LLM, collect tool_use blocks, dispatch them,
+// and append tool_result blocks back into the conversation.
+// The "nag" counter injects a reminder if the LLM forgets its todos.
 
 pub async fn agent_loop(
     client: &AnthropicClient,
@@ -62,14 +69,17 @@ pub async fn agent_loop(
         log_info("model", model);
         eprintln!();
 
+        // Call the Anthropic API with current conversation state
         log_step("→", "Calling Anthropic API...");
         let response = client
             .create_message(model, Some(system), messages, Some(tools), 8000)
             .await;
 
+        // Extract stop_reason to decide whether to continue the loop
         let stop_reason = response["stop_reason"].as_str().unwrap_or("").to_string();
         let content = response["content"].clone();
 
+        // Log token usage for observability
         let usage = &response["usage"];
         let input_tokens = usage["input_tokens"].as_u64().unwrap_or(0);
         let output_tokens = usage["output_tokens"].as_u64().unwrap_or(0);
@@ -80,8 +90,10 @@ pub async fn agent_loop(
         log_info("stop", &stop_reason);
         eprintln!();
 
+        // Append the assistant's response to conversation history
         messages.push(json!({"role": "assistant", "content": content}));
 
+        // If the model didn't request tool use, we're done
         if stop_reason != "tool_use" {
             log_section("Agent Response");
             log_info("status", "Complete - no tool use");
@@ -96,6 +108,7 @@ pub async fn agent_loop(
         log_info("tools", &format!("{} tool call(s) requested", tool_count));
         eprintln!();
 
+        // Iterate over content blocks and dispatch each tool_use
         let mut results = Vec::new();
         let mut used_todo = false;
 
@@ -122,6 +135,7 @@ pub async fn agent_loop(
                     log_output_preview(&output);
                     eprintln!();
 
+                    // Each result becomes a tool_result block in the next message
                     results.push(json!({
                         "type": "tool_result",
                         "tool_use_id": block["id"],
@@ -131,12 +145,14 @@ pub async fn agent_loop(
             }
         }
 
+        // Track how many rounds since the last todo update
         rounds_since_todo = if used_todo {
             0
         } else {
             rounds_since_todo + 1
         };
 
+        // Nag reminder: inject a text block if the LLM ignores todos for 3+ rounds
         if rounds_since_todo >= 3 {
             log_step("⚠", "Injecting nag reminder");
             results.insert(

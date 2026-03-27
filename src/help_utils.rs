@@ -8,6 +8,9 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command as Proc;
 
 // -- Path helpers --
+// Normalize resolves "." and ".." without touching the filesystem.
+// safe_path joins a user-supplied path to the workdir and rejects
+// any traversal that would escape the workspace root.
 
 pub fn normalize_path(path: &Path) -> PathBuf {
     let mut components: Vec<Component> = Vec::new();
@@ -23,6 +26,7 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     components.iter().collect()
 }
 
+/// Resolve `p` relative to `workdir`, rejecting paths that escape the workspace.
 pub fn safe_path(p: &str, workdir: &Path) -> Result<PathBuf, String> {
     let workdir_abs = workdir
         .canonicalize()
@@ -37,7 +41,10 @@ pub fn safe_path(p: &str, workdir: &Path) -> Result<PathBuf, String> {
 }
 
 // -- Tool runners --
+// Each runner takes a workdir, calls safe_path when needed, and returns
+// a string result. Errors are returned as strings, never panicking.
 
+/// Run a shell command via `sh -c`. Blocks dangerous patterns like `rm -rf /`.
 pub fn run_bash(command: &str, workdir: &Path) -> String {
     let blocked = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"];
     if blocked.iter().any(|b| command.contains(b)) {
@@ -51,6 +58,7 @@ pub fn run_bash(command: &str, workdir: &Path) -> String {
     {
         Err(e) => format!("Error: {}", e),
         Ok(out) => {
+            // Merge stdout + stderr, trim, and cap at 50KB
             let text = format!(
                 "{}{}",
                 String::from_utf8_lossy(&out.stdout),
@@ -68,6 +76,7 @@ pub fn run_bash(command: &str, workdir: &Path) -> String {
     }
 }
 
+/// Read a file as UTF-8 text. Optionally limit to first N lines.
 pub fn run_read(path: &str, limit: Option<usize>, workdir: &Path) -> String {
     match safe_path(path, workdir) {
         Err(e) => format!("Error: {}", e),
@@ -93,6 +102,7 @@ pub fn run_read(path: &str, limit: Option<usize>, workdir: &Path) -> String {
     }
 }
 
+/// Write content to a file, creating parent directories as needed.
 pub fn run_write(path: &str, content: &str, workdir: &Path) -> String {
     match safe_path(path, workdir) {
         Err(e) => format!("Error: {}", e),
@@ -108,6 +118,7 @@ pub fn run_write(path: &str, content: &str, workdir: &Path) -> String {
     }
 }
 
+/// Replace the first occurrence of `old_text` with `new_text` in a file.
 pub fn run_edit(path: &str, old_text: &str, new_text: &str, workdir: &Path) -> String {
     match safe_path(path, workdir) {
         Err(e) => format!("Error: {}", e),

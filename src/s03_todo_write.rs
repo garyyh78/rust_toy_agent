@@ -31,6 +31,10 @@ use std::env;
 use std::io::{BufRead, Write};
 use std::sync::{Arc, Mutex};
 
+// -- REPL helpers --
+// These stay in the binary because they're specific to the interactive
+// terminal interface; a non-interactive binary wouldn't need them.
+
 fn read_prompt(prompt: &str) -> Option<String> {
     print!("{}", prompt);
     std::io::stdout().flush().ok();
@@ -55,6 +59,9 @@ fn print_final_response(messages: &[serde_json::Value]) {
     }
 }
 
+// -- Main entry point --
+// Loads env, constructs the client and tools, then enters the REPL loop.
+
 #[tokio::main]
 async fn main() {
     dotenvy::dotenv().ok();
@@ -71,6 +78,7 @@ Prefer tools over prose.",
     let tools: Json = serde_json::from_str(TOOLS).unwrap();
     let todo = Arc::new(Mutex::new(TodoManager::new()));
 
+    // Print startup banner
     eprintln!();
     eprintln!("\x1b[35m╔══════════════════════════════════════════════════════════════╗\x1b[0m");
     eprintln!("\x1b[35m║          S03 Agent Loop - TodoWrite Edition                 ║\x1b[0m");
@@ -83,6 +91,7 @@ Prefer tools over prose.",
     eprintln!("\x1b[34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
     eprintln!();
 
+    // REPL: each turn reads input, runs agent_loop, prints the final text
     let mut history: Messages = Vec::new();
     let mut turn = 0usize;
 
@@ -105,6 +114,7 @@ Prefer tools over prose.",
         );
         eprintln!();
 
+        // Push user message, run the agent, then display results
         history.push(serde_json::json!({"role": "user", "content": query}));
         agent_loop(
             &client,
