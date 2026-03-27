@@ -1,10 +1,10 @@
 # Rust Toy Agent
 
-A minimal AI coding agent implementation in Rust that demonstrates the core agent loop pattern.
+A minimal AI coding agent implementation in Rust that demonstrates the core agent loop pattern with a library-based architecture.
 
 ## Overview
 
-This is a Rust port of a Python-based AI agent that uses the DeepSeek API to create an interactive coding assistant. The agent can execute shell commands and iteratively improve its responses based on tool outputs.
+An interactive coding assistant that uses the Anthropic API to run shell commands, read/write/edit files, and track multi-step tasks via a TodoManager. The codebase is organized into reusable library modules and a binary.
 
 ## The Agent Loop
 
@@ -25,25 +25,47 @@ This creates a feedback loop where the model can:
 ## Architecture
 
 ```
-User Prompt → LLM → Tool Execute → Results
+User Prompt → LLM → Tool Dispatch → Results
      ↑                               |
      └───────────────────────────────┘
+              |
+     TodoManager tracks progress
+     Nag reminder after 3 idle rounds
 ```
+
+## Project Structure
+
+```
+src/
+├── lib.rs              # Library root, exports all modules
+├── client.rs           # AnthropicClient (API wrapper)
+├── help_utils.rs       # Path helpers & tool runners (bash, read, write, edit)
+├── tools.rs            # TOOLS schema, TodoManager, dispatch_tools
+└── s03_todo_write.rs   # Binary: agent loop with nag reminder
+```
+
+### Library Modules
+
+| Module | Purpose |
+|--------|---------|
+| `client` | `AnthropicClient` -- builds and sends requests to the Anthropic Messages API |
+| `help_utils` | Path sandboxing (`safe_path`, `normalize_path`) and tool runners (`run_bash`, `run_read`, `run_write`, `run_edit`) |
+| `tools` | TOOLS JSON schema, `TodoManager`, `dispatch_tools` router |
 
 ## Features
 
-- **Single Tool**: `bash` - Execute shell commands
-- **Safety**: Dangerous commands are blocked (rm -rf /, sudo, shutdown, reboot, etc.)
-- **Timeouts**: 120-second command timeout
-- **Output Limits**: 50KB max output per command
-- **Interactive REPL**: Continuous conversation with the agent
+- **5 Tools**: `bash`, `read_file`, `write_file`, `edit_file`, `todo`
+- **TodoManager**: LLM-driven task tracking with status validation
+- **Nag Reminder**: Injects `<reminder>` if the LLM skips todo updates for 3+ rounds
+- **Safety**: Dangerous commands blocked, path escape prevention, 50KB output cap
+- **Interactive REPL**: Continuous conversation with colored output
 
 ## Usage
 
 ### Prerequisites
 
 - Rust 1.70+
-- DeepSeek API key
+- Anthropic API key
 
 ### Setup
 
@@ -54,72 +76,48 @@ cp .env.example .env
 
 2. Edit `.env` with your API key:
 ```
-DEEPSEEK_API_KEY=your_key_here
-MODEL_ID=deepseek-chat
+ANTHROPIC_API_KEY=your_key_here
+MODEL_ID=claude-sonnet-4-20250514
 ```
 
 3. Build and run:
 ```bash
 cargo build --release
-./target/release/s01_agent_loop
+./target/release/s03_todo_write
 ```
 
 ### Interactive Session
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║          S01 Agent Loop - Interactive Session                ║
+║          S03 Agent Loop - TodoWrite Edition                 ║
 ╚══════════════════════════════════════════════════════════════╝
 
-  model        deepseek-chat
+  model        claude-sonnet-4-20250514
   workdir      /path/to/project
-  tools        bash
+  tools        bash, read_file, write_file, edit_file, todo
   max_tokens   8000
 
-s01 >> ls -la
-[Agent executes commands and shows results]
+s03 >> List files and create a hello world script
+[Agent executes tools and shows results]
 ```
 
 Type `q`, `exit`, or press Enter with empty input to quit.
 
-## Code Structure
-
-- `src/lib.rs` - Shared utilities (API client, bash execution, file tools)
-- `src/s01_agent_loop.rs` - Agent loop implementation with tests
-
 ## Testing
-
-Run the test suite:
 
 ```bash
 cargo test
 ```
 
-Tests cover:
-- Tool JSON structure parsing
-- Bash command execution
-- Dangerous command blocking
-- Output handling
-- Message history structure
+Tests are split across modules:
 
-### Test Results
-
-```
-running 11 tests
-test tests::test_exit_commands ... ok
-test tests::test_messages_append_structure ... ok
-test tests::test_run_bash_dangerous_blocked ... ok
-test tests::test_stop_reason_check ... ok
-test tests::test_system_prompt_format ... ok
-test tests::test_tool_result_structure ... ok
-test tests::test_tool_use_block_parsing ... ok
-test tests::test_tools_json_parsing ... ok
-test tests::test_run_bash_simple_echo ... ok
-test tests::test_run_bash_no_output ... ok
-test tests::test_run_bash_captures_stderr ... ok
-
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
-```
+| Module | Tests | Covers |
+|--------|-------|--------|
+| `help_utils` | 13 | Path normalization, safe_path, bash blocking, file read/write/edit |
+| `client` | 7 | Request body construction, env defaults |
+| `tools` | 14 | TOOLS schema, TodoManager validation, dispatch routing |
+| `s03_todo_write` | 4 | Nag reminder threshold, message flow, tool result structure |
 
 ## License
 

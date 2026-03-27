@@ -3,13 +3,9 @@ name = "rust_toy_agent"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "s01_agent_loop"
-path = "src/s01_agent_loop.rs"
-
-[[bin]]
-name = "s02_agent_loop"
-path = "src/s02_agent_loop.rs"
+[lib]
+name = "rust_toy_agent"
+path = "src/lib.rs"
 
 [[bin]]
 name = "s03_todo_write"
