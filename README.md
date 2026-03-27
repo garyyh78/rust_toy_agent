@@ -25,12 +25,33 @@ This creates a feedback loop where the model can:
 ## Architecture
 
 ```
-User Prompt → LLM → Tool Dispatch → Results
-     ↑                               |
-     └───────────────────────────────┘
-              |
-     TodoManager tracks progress
-     Nag reminder after 3 idle rounds
+┌──────────────────────────────────────────────────────────────┐
+│                     Module Dependency Graph                   │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│   ┌─────────────┐        ┌──────────────┐                    │
+│   │   client.rs │◄───────│ agent_loop   │                    │
+│   └─────────────┘        └──┬───┬───┬───┘                    │
+│        create_message()     │   │   │                        │
+│                             │   │   │                        │
+│   ┌─────────────┐           │   │   │                        │
+│   │   tools.rs  │◄──────────┘   │   │                        │
+│   └─────────────┘  dispatch      │   │                        │
+│       dispatch_tools()           │   │                        │
+│                                  │   │                        │
+│   ┌─────────────┐               │   │                        │
+│   │  logger.rs  │◄──────────────┘   │                        │
+│   └─────────────┘  log_*()          │                        │
+│                                     │                        │
+│   ┌─────────────┐                   │                        │
+│   │help_utils.rs│◄──────────────────┘                        │
+│   └─────────────┘  (called by tools)                         │
+│                                                              │
+│   ┌──────────────┐                                           │
+│   │ s03_todo_    │  Binary entry point                       │
+│   │ write.rs     │  wires everything together                │
+│   └──────────────┘                                           │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ## Project Structure
@@ -39,18 +60,21 @@ User Prompt → LLM → Tool Dispatch → Results
 src/
 ├── lib.rs              # Library root, exports all modules
 ├── client.rs           # AnthropicClient (API wrapper)
+├── logger.rs           # Colored stderr logging helpers
 ├── help_utils.rs       # Path helpers & tool runners (bash, read, write, edit)
 ├── tools.rs            # TOOLS schema, TodoManager, dispatch_tools
-└── s03_todo_write.rs   # Binary: agent loop with nag reminder
+└── s03_todo_write.rs   # Binary: main + REPL
 ```
 
 ### Library Modules
 
-| Module | Purpose |
-|--------|---------|
-| `client` | `AnthropicClient` -- builds and sends requests to the Anthropic Messages API |
-| `help_utils` | Path sandboxing (`safe_path`, `normalize_path`) and tool runners (`run_bash`, `run_read`, `run_write`, `run_edit`) |
-| `tools` | TOOLS JSON schema, `TodoManager`, `dispatch_tools` router |
+| Module | Purpose | Diagram |
+|--------|---------|---------|
+| `client` | `AnthropicClient` -- builds and sends requests to the Anthropic Messages API | Struct with `from_env()`, `new()`, `create_message()`, `build_request_body()` |
+| `logger` | Colored stderr output: `log_section`, `log_info`, `log_step`, `log_output_preview` | Each function targets a different visual level |
+| `help_utils` | Path sandboxing (`safe_path`, `normalize_path`) and tool runners | `safe_path` guards all runners; each returns String, never panics |
+| `tools` | TOOLS JSON schema, `TodoManager`, `dispatch_tools` router | Routes tool names to help_utils runners; manages todo state |
+| `agent_loop` | Core loop: call LLM, dispatch tools, track nag reminder | Ties client + tools + logger together |
 
 ## Features
 
@@ -58,6 +82,7 @@ src/
 - **TodoManager**: LLM-driven task tracking with status validation
 - **Nag Reminder**: Injects `<reminder>` if the LLM skips todo updates for 3+ rounds
 - **Safety**: Dangerous commands blocked, path escape prevention, 50KB output cap
+- **Logging**: Color-coded stderr diagnostics via dedicated logger module
 - **Interactive REPL**: Continuous conversation with colored output
 
 ## Usage
@@ -117,7 +142,16 @@ Tests are split across modules:
 | `help_utils` | 13 | Path normalization, safe_path, bash blocking, file read/write/edit |
 | `client` | 7 | Request body construction, env defaults |
 | `tools` | 14 | TOOLS schema, TodoManager validation, dispatch routing |
-| `s03_todo_write` | 4 | Nag reminder threshold, message flow, tool result structure |
+| `agent_loop` | 5 | Nag reminder, messages flow, stop reasons, system prompt, tool result structure |
+| `logger` | 5 | Logging functions execute without panic |
+
+## Linting
+
+```bash
+cargo fmt          # Auto-format
+cargo clippy       # Lint check
+cargo clippy --fix # Auto-fix lint issues
+```
 
 ## License
 

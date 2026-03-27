@@ -1,8 +1,35 @@
 //! help_utils.rs - Path helpers and file/shell tool runners
 //!
-//! Everything that touches the filesystem or runs shell commands lives here:
-//! - normalize_path / safe_path for workspace-sandboxed file access
-//! - run_bash, run_read, run_write, run_edit
+//! Everything that touches the filesystem or runs shell commands lives here.
+//!
+//! ┌──────────────────────────────────────────────────────────┐
+//! │                    help_utils                            │
+//! ├──────────────────────────────────────────────────────────┤
+//! │                                                          │
+//! │  Path helpers:                                           │
+//! │  ┌──────────────┐    ┌──────────────┐                    │
+//! │  │normalize_path│───→│  safe_path   │                    │
+//! │  └──────────────┘    └──────┬───────┘                    │
+//! │   resolves . and ..        │ rejects paths that          │
+//! │                            │ escape workdir              │
+//! │                            │                             │
+//! │  Tool runners (all call safe_path first):                │
+//! │                            │                             │
+//! │            ┌───────────────┼───────────────┐             │
+//! │            │               │               │             │
+//! │     ┌──────▼──────┐ ┌─────▼──────┐ ┌──────▼──────┐      │
+//! │     │  run_bash   │ │  run_read  │ │ run_write   │      │
+//! │     └──────┬──────┘ └─────┬──────┘ └──────┬──────┘      │
+//! │            │              │               │              │
+//! │     sh -c command   read file N    write + mkdir         │
+//! │     block dangerous  lines, cap     parent dirs          │
+//! │     50KB cap         50KB cap       50KB cap             │
+//! │                                                          │
+//! │     ┌──────▼──────┐                                      │
+//! │     │  run_edit   │                                      │
+//! │     └─────────────┘                                      │
+//! │      replacen(old, new, 1)                                │
+//! └──────────────────────────────────────────────────────────┘
 
 use std::path::{Component, Path, PathBuf};
 use std::process::Command as Proc;
@@ -36,7 +63,7 @@ pub fn safe_path(p: &str, workdir: &Path) -> Result<PathBuf, String> {
     if normalized.starts_with(&workdir_abs) {
         Ok(normalized)
     } else {
-        Err(format!("Path escapes workspace: {}", p))
+        Err(format!("Path escapes workspace: {p}"))
     }
 }
 
@@ -56,7 +83,7 @@ pub fn run_bash(command: &str, workdir: &Path) -> String {
         .current_dir(workdir)
         .output()
     {
-        Err(e) => format!("Error: {}", e),
+        Err(e) => format!("Error: {e}"),
         Ok(out) => {
             // Merge stdout + stderr, trim, and cap at 50KB
             let text = format!(
@@ -79,9 +106,9 @@ pub fn run_bash(command: &str, workdir: &Path) -> String {
 /// Read a file as UTF-8 text. Optionally limit to first N lines.
 pub fn run_read(path: &str, limit: Option<usize>, workdir: &Path) -> String {
     match safe_path(path, workdir) {
-        Err(e) => format!("Error: {}", e),
+        Err(e) => format!("Error: {e}"),
         Ok(fp) => match std::fs::read_to_string(&fp) {
-            Err(e) => format!("Error: {}", e),
+            Err(e) => format!("Error: {e}"),
             Ok(text) => {
                 let lines: Vec<&str> = text.lines().collect();
                 let result: String = match limit {
@@ -105,14 +132,14 @@ pub fn run_read(path: &str, limit: Option<usize>, workdir: &Path) -> String {
 /// Write content to a file, creating parent directories as needed.
 pub fn run_write(path: &str, content: &str, workdir: &Path) -> String {
     match safe_path(path, workdir) {
-        Err(e) => format!("Error: {}", e),
+        Err(e) => format!("Error: {e}"),
         Ok(fp) => {
             if let Some(parent) = fp.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
             match std::fs::write(&fp, content) {
                 Ok(_) => format!("Wrote {} bytes to {}", content.len(), path),
-                Err(e) => format!("Error: {}", e),
+                Err(e) => format!("Error: {e}"),
             }
         }
     }
@@ -121,17 +148,17 @@ pub fn run_write(path: &str, content: &str, workdir: &Path) -> String {
 /// Replace the first occurrence of `old_text` with `new_text` in a file.
 pub fn run_edit(path: &str, old_text: &str, new_text: &str, workdir: &Path) -> String {
     match safe_path(path, workdir) {
-        Err(e) => format!("Error: {}", e),
+        Err(e) => format!("Error: {e}"),
         Ok(fp) => match std::fs::read_to_string(&fp) {
-            Err(e) => format!("Error: {}", e),
+            Err(e) => format!("Error: {e}"),
             Ok(content) => {
                 if !content.contains(old_text) {
-                    return format!("Error: Text not found in {}", path);
+                    return format!("Error: Text not found in {path}");
                 }
                 let new_content = content.replacen(old_text, new_text, 1);
                 match std::fs::write(&fp, new_content) {
-                    Ok(_) => format!("Edited {}", path),
-                    Err(e) => format!("Error: {}", e),
+                    Ok(_) => format!("Edited {path}"),
+                    Err(e) => format!("Error: {e}"),
                 }
             }
         },
@@ -218,8 +245,7 @@ mod tests {
             let out = run_bash(cmd, &PathBuf::from("."));
             assert!(
                 out.contains("Dangerous command blocked"),
-                "Expected block for: {}",
-                cmd
+                "Expected block for: {cmd}"
             );
         }
     }

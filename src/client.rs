@@ -1,6 +1,33 @@
 //! client.rs - Anthropic API client
 //!
 //! Wraps reqwest to talk to the Anthropic Messages API.
+//!
+//! Relationship diagram:
+//!
+//!   ┌───────────────────────────────────────────────────┐
+//!   │              AnthropicClient                      │
+//!   ├───────────────────────────────────────────────────┤
+//!   │  from_env()  ── reads ANTHROPIC_API_KEY           │
+//!   │                reads ANTHROPIC_BASE_URL            │
+//!   │                                                   │
+//!   │  new()       ── explicit credentials              │
+//!   │                                                   │
+//!   │  build_request_body() ── pure JSON builder        │
+//!   │      ┌──────────────────────────────────┐         │
+//!   │      │ { model, system?, messages,      │         │
+//!   │      │   tools?, max_tokens }           │         │
+//!   │      └──────────────────────────────────┘         │
+//!   │                                                   │
+//!   │  create_message() ── async HTTP POST              │
+//!   │      │                                            │
+//!   │      ├─ build_request_body()                      │
+//!   │      ├─ POST /v1/messages                         │
+//!   │      ├─ check status code                         │
+//!   │      └─ parse JSON response                       │
+//!   └───────────────────────────────────────────────────┘
+//!
+//! Used by: agent_loop.rs (create_message)
+//! Tested by: 7 unit tests (build_request_body variants)
 
 use serde_json::Value as Json;
 use std::env;
@@ -79,8 +106,8 @@ impl AnthropicClient {
         let status = resp.status();
         let text = resp.text().await.expect("Failed to read response body");
         if !status.is_success() {
-            eprintln!("\x1b[31m[api] error {}: {}\x1b[0m", status, text);
-            panic!("Anthropic API error {}: {}", status, text);
+            eprintln!("\x1b[31m[api] error {status}: {text}\x1b[0m");
+            panic!("Anthropic API error {status}: {text}");
         }
         serde_json::from_str(&text).expect("Failed to parse API response")
     }
@@ -133,7 +160,13 @@ mod tests {
     #[test]
     fn test_build_request_body_minimal() {
         let messages = vec![serde_json::json!({"role": "user", "content": "hi"})];
-        let body = AnthropicClient::build_request_body("claude-sonnet-4-20250514", None, &messages, None, 1024);
+        let body = AnthropicClient::build_request_body(
+            "claude-sonnet-4-20250514",
+            None,
+            &messages,
+            None,
+            1024,
+        );
         assert_eq!(body["model"], "claude-sonnet-4-20250514");
         assert_eq!(body["max_tokens"], 1024);
         assert!(body.get("system").is_none());

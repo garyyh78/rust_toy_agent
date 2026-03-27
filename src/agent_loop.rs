@@ -2,8 +2,45 @@
 //!
 //! The loop calls the LLM, dispatches tool calls, and tracks todo usage.
 //! If the LLM skips todo updates for 3+ rounds, a nag reminder is injected.
+//!
+//! Module relationship:
+//!
+//!   ┌─────────────┐        ┌──────────────┐
+//!   │   client.rs │◄───────│ agent_loop   │
+//!   └─────────────┘        └──┬───┬───┬───┘
+//!        create_message()     │   │   │
+//!                             │   │   │
+//!   ┌─────────────┐           │   │   │
+//!   │   tools.rs  │◄──────────┘   │   │
+//!   └─────────────┘  dispatch      │   │
+//!       dispatch_tools()           │   │
+//!                                  │   │
+//!   ┌─────────────┐               │   │
+//!   │  logger.rs  │◄──────────────┘   │
+//!   └─────────────┘  log_*()          │
+//!                                     │
+//!   ┌─────────────┐                   │
+//!   │help_utils.rs│◄──────────────────┘
+//!   └─────────────┘  (called by tools)
+//!
+//! agent_loop() flow:
+//!
+//!   ┌──────────────────────────────────────────────┐
+//!   │  loop {                                      │
+//!   │    call LLM  ──→  check stop_reason          │
+//!   │       │                                       │
+//!   │       ├─ not "tool_use"  ──→  return          │
+//!   │       │                                       │
+//!   │       └─ "tool_use"     ──→  dispatch_tools() │
+//!   │              │                                │
+//!   │              ├─ track rounds_since_todo       │
+//!   │              ├─ if >= 3: inject <reminder>    │
+//!   │              └─ append tool_result to msgs    │
+//!   │  }                                            │
+//!   └──────────────────────────────────────────────┘
 
 use crate::client::AnthropicClient;
+use crate::logger::{log_info, log_output_preview, log_section, log_step};
 use crate::tools::{dispatch_tools, TodoManager};
 use serde_json::json;
 use serde_json::Value as Json;
@@ -12,39 +49,6 @@ use std::sync::{Arc, Mutex};
 
 /// The conversation history is a vector of JSON message objects.
 pub type Messages = Vec<Json>;
-
-// -- Logging helpers --
-// Colored stderr output for agent loop diagnostics.
-// All logging goes to stderr so stdout stays clean for the REPL.
-
-pub fn log_section(title: &str) {
-    eprintln!("\x1b[34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
-    eprintln!("\x1b[34m {}\x1b[0m", title);
-    eprintln!("\x1b[34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
-}
-
-pub fn log_info(label: &str, value: &str) {
-    eprintln!("\x1b[36m  {:<12}\x1b[0m {}", label, value);
-}
-
-pub fn log_step(step: &str, detail: &str) {
-    eprintln!("\x1b[33m  {}\x1b[0m {}", step, detail);
-}
-
-/// Show first 5 lines of tool output, then a count of remaining lines.
-pub fn log_output_preview(output: &str) {
-    let lines: Vec<&str> = output.lines().take(5).collect();
-    let truncated = output.lines().count() > 5;
-    for line in &lines {
-        eprintln!("\x1b[90m    {}\x1b[0m", line);
-    }
-    if truncated {
-        eprintln!(
-            "\x1b[90m    ... ({} more lines)\x1b[0m",
-            output.lines().count() - 5
-        );
-    }
-}
 
 // -- Agent loop with nag reminder --
 // Each iteration: call LLM, collect tool_use blocks, dispatch them,
@@ -64,7 +68,7 @@ pub async fn agent_loop(
     let mut rounds_since_todo = 0usize;
     loop {
         round += 1;
-        log_section(&format!("Agent Loop Round {}", round));
+        log_section(&format!("Agent Loop Round {round}"));
         log_info("history", &format!("{} messages", messages.len()));
         log_info("model", model);
         eprintln!();
@@ -85,7 +89,7 @@ pub async fn agent_loop(
         let output_tokens = usage["output_tokens"].as_u64().unwrap_or(0);
         log_info(
             "tokens",
-            &format!("{} in / {} out", input_tokens, output_tokens),
+            &format!("{input_tokens} in / {output_tokens} out"),
         );
         log_info("stop", &stop_reason);
         eprintln!();
@@ -105,7 +109,7 @@ pub async fn agent_loop(
             .map(|blocks| blocks.iter().filter(|b| b["type"] == "tool_use").count())
             .unwrap_or(0);
 
-        log_info("tools", &format!("{} tool call(s) requested", tool_count));
+        log_info("tools", &format!("{tool_count} tool call(s) requested"));
         eprintln!();
 
         // Iterate over content blocks and dispatch each tool_use
@@ -120,13 +124,13 @@ pub async fn agent_loop(
 
                     log_step(
                         &format!("[{}]", i + 1),
-                        &format!("{}: \x1b[1m{:?}\x1b[0m", tool_name, block["input"]),
+                        &format!("{tool_name}: \x1b[1m{:?}\x1b[0m", block["input"]),
                     );
                     log_info("id", &tool_id[..std::cmp::min(8, tool_id.len())]);
 
                     let (output, did_todo) =
                         dispatch_tools(tool_name, &block["input"], workdir, todo);
-                    let output = output.unwrap_or_else(|| format!("Unknown tool: {}", tool_name));
+                    let output = output.unwrap_or_else(|| format!("Unknown tool: {tool_name}"));
                     if did_todo {
                         used_todo = true;
                     }
@@ -146,11 +150,7 @@ pub async fn agent_loop(
         }
 
         // Track how many rounds since the last todo update
-        rounds_since_todo = if used_todo {
-            0
-        } else {
-            rounds_since_todo + 1
-        };
+        rounds_since_todo = if used_todo { 0 } else { rounds_since_todo + 1 };
 
         // Nag reminder: inject a text block if the LLM ignores todos for 3+ rounds
         if rounds_since_todo >= 3 {
@@ -161,7 +161,10 @@ pub async fn agent_loop(
             );
         }
 
-        log_info("results", &format!("{} tool result(s) ready", results.len()));
+        log_info(
+            "results",
+            &format!("{} tool result(s) ready", results.len()),
+        );
         messages.push(json!({"role": "user", "content": results}));
     }
 }
@@ -201,7 +204,7 @@ mod tests {
     fn test_stop_reason_handling() {
         let reasons = ["end_turn", "max_tokens", "stop_sequence", ""];
         for reason in reasons {
-            assert_ne!(reason, "tool_use", "should stop for: {}", reason);
+            assert_ne!(reason, "tool_use", "should stop for: {reason}");
         }
         assert_eq!("tool_use", "tool_use");
     }

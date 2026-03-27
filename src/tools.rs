@@ -2,6 +2,43 @@
 //!
 //! TOOLS constant (JSON schema), TodoManager, and the dispatch_tools router.
 //! Path/file operations come from help_utils.
+//!
+//! ┌──────────────────────────────────────────────────────────────┐
+//! │                        tools.rs                              │
+//! ├──────────────────────────────────────────────────────────────┤
+//! │                                                              │
+//! │  TOOLS ── JSON schema sent to Anthropic API                  │
+//! │    ├── bash        ── run_bash()      [help_utils]           │
+//! │    ├── read_file   ── run_read()      [help_utils]           │
+//! │    ├── write_file  ── run_write()     [help_utils]           │
+//! │    ├── edit_file   ── run_edit()      [help_utils]           │
+//! │    └── todo        ── TodoManager.update()                   │
+//! │                                                              │
+//! │  ┌────────────────────────────────────┐                      │
+//! │  │           TodoManager             │                      │
+//! │  ├────────────────────────────────────┤                      │
+//! │  │  items: Vec<TodoItem>             │                      │
+//! │  │                                    │                      │
+//! │  │  update(&[Json]) -> Result<String> │                      │
+//! │  │    ├── validate max 20             │                      │
+//! │  │    ├── require non-empty text      │                      │
+//! │  │    ├── one in_progress at a time   │                      │
+//! │  │    └── valid status enum           │                      │
+//! │  │                                    │                      │
+//! │  │  render() -> String               │                      │
+//! │  │    [ ] pending  [>] in_progress   │                      │
+//! │  │    [x] completed (N/M done)       │                      │
+//! │  └────────────────────────────────────┘                      │
+//! │                                                              │
+//! │  dispatch_tools(name, input, workdir, todo)                  │
+//! │    │                                                         │
+//! │    ├── "bash"       ──→ run_bash()    ──→ (output, false)    │
+//! │    ├── "read_file"  ──→ run_read()    ──→ (output, false)    │
+//! │    ├── "write_file" ──→ run_write()   ──→ (output, false)    │
+//! │    ├── "edit_file"  ──→ run_edit()    ──→ (output, false)    │
+//! │    ├── "todo"       ──→ mgr.update()  ──→ (output, true)     │
+//! │    └── _            ──→ None          ──→ (None,    false)   │
+//! └──────────────────────────────────────────────────────────────┘
 
 use crate::help_utils::{run_bash, run_edit, run_read, run_write};
 use serde_json::Value as Json;
@@ -100,6 +137,12 @@ pub struct TodoManager {
     items: Vec<TodoItem>,
 }
 
+impl Default for TodoManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TodoManager {
     pub fn new() -> Self {
         Self { items: Vec::new() }
@@ -108,7 +151,7 @@ impl TodoManager {
     /// Validate and replace the full todo list. Returns rendered output on success.
     pub fn update(&mut self, items_json: &[Json]) -> Result<String, String> {
         if items_json.len() > MAX_TODO_ITEMS {
-            return Err(format!("Max {} todos allowed", MAX_TODO_ITEMS));
+            return Err(format!("Max {MAX_TODO_ITEMS} todos allowed"));
         }
         let mut validated = Vec::new();
         let mut in_progress_count = 0usize;
@@ -130,10 +173,10 @@ impl TodoManager {
                 .unwrap_or(&format!("{}", i + 1))
                 .to_string();
             if text.is_empty() {
-                return Err(format!("Item {}: text required", item_id));
+                return Err(format!("Item {item_id}: text required"));
             }
             if !matches!(status.as_str(), "pending" | "in_progress" | "completed") {
-                return Err(format!("Item {}: invalid status '{}'", item_id, status));
+                return Err(format!("Item {item_id}: invalid status '{status}'"));
             }
             if status == "in_progress" {
                 in_progress_count += 1;
@@ -163,7 +206,7 @@ impl TodoManager {
                 "completed" => "[x]",
                 _ => "[ ]",
             };
-            lines.push(format!("{} #{}: {}", marker, item.id, item.text));
+            lines.push(format!("{marker} #{}: {}", item.id, item.text));
         }
         let done = self
             .items
@@ -225,7 +268,7 @@ pub fn dispatch_tools(
             let mut mgr = todo.lock().unwrap();
             match mgr.update(items) {
                 Ok(rendered) => (Some(rendered), true),
-                Err(e) => (Some(format!("Error: {}", e)), true),
+                Err(e) => (Some(format!("Error: {e}")), true),
             }
         }
         _ => (None, false),
@@ -327,7 +370,7 @@ mod tests {
         let mut mgr = TodoManager::new();
         let items: Vec<Json> = (1..=21)
             .map(|i| {
-                serde_json::json!({"id": format!("{}", i), "text": format!("task {}", i), "status": "pending"})
+                serde_json::json!({"id": format!("{i}"), "text": format!("task {i}"), "status": "pending"})
             })
             .collect();
         let result = mgr.update(&items);

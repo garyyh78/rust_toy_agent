@@ -3,6 +3,30 @@
 //! Entry point for the agent. Wires up the library modules and runs
 //! the interactive REPL.
 //!
+//! Module dependency graph:
+//!
+//!   ┌─────────────────────────────────────────────────────────────┐
+//!   │                 s03_todo_write.rs (binary)                  │
+//!   ├─────────────────────────────────────────────────────────────┤
+//!   │                                                             │
+//!   │   Imports:                                                  │
+//!   │     agent_loop ─── agent_loop(), Messages                   │
+//!   │     logger    ─── log_info()                                │
+//!   │     client    ─── AnthropicClient                           │
+//!   │     tools     ─── TodoManager, TOOLS                        │
+//!   │                                                             │
+//!   │   main() flow:                                              │
+//!   │     ┌──────────┐    ┌──────────┐    ┌──────────┐           │
+//!   │     │  init    │───→│  REPL    │───→│  agent_  │           │
+//!   │     │  client  │    │  loop    │    │  loop()  │           │
+//!   │     │  tools   │    │  read    │    │  await   │           │
+//!   │     │  todo    │    │  prompt  │    │          │           │
+//!   │     └──────────┘    └────┬─────┘    └──────────┘           │
+//!   │                         │                                  │
+//!   │                    read_prompt() ── stdin                  │
+//!   │                    print_final_response() ── stdout        │
+//!   └─────────────────────────────────────────────────────────────┘
+//!
 //!     +----------+      +-------+      +---------+
 //!     |   User   | ---> |  LLM  | ---> | Tools   |
 //!     |  prompt  |      |       |      | + todo  |
@@ -23,8 +47,9 @@
 //!
 //! Key insight: "The agent can track its own progress -- and I can see it."
 
-use rust_toy_agent::agent_loop::{agent_loop, log_info, Messages};
+use rust_toy_agent::agent_loop::{agent_loop, Messages};
 use rust_toy_agent::client::AnthropicClient;
+use rust_toy_agent::logger::log_info;
 use rust_toy_agent::tools::{TodoManager, TOOLS};
 use serde_json::Value as Json;
 use std::env;
@@ -36,7 +61,7 @@ use std::sync::{Arc, Mutex};
 // terminal interface; a non-interactive binary wouldn't need them.
 
 fn read_prompt(prompt: &str) -> Option<String> {
-    print!("{}", prompt);
+    print!("{prompt}");
     std::io::stdout().flush().ok();
     let mut line = String::new();
     match std::io::stdin().lock().read_line(&mut line) {
@@ -51,7 +76,7 @@ fn print_final_response(messages: &[serde_json::Value]) {
             for block in blocks {
                 if block["type"] == "text" {
                     if let Some(text) = block["text"].as_str() {
-                        println!("{}", text);
+                        println!("{text}");
                     }
                 }
             }
@@ -108,8 +133,7 @@ Prefer tools over prose.",
         turn += 1;
         eprintln!();
         eprintln!(
-            "\x1b[35m  Turn {}: {}\x1b[0m",
-            turn,
+            "\x1b[35m  Turn {turn}: {}\x1b[0m",
             &query[..std::cmp::min(50, query.len())]
         );
         eprintln!();
