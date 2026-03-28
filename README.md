@@ -1,157 +1,116 @@
 # Rust Toy Agent
 
-A minimal AI coding agent implementation in Rust that demonstrates the core agent loop pattern with a library-based architecture.
+A minimal AI coding agent in Rust. It talks to the Anthropic API (or any compatible endpoint like DeepSeek), executes tools in a loop, and tracks multi-step tasks with a built-in todo system.
 
-## Overview
-
-An interactive coding assistant that uses the Anthropic API to run shell commands, read/write/edit files, and track multi-step tasks via a TodoManager. The codebase is organized into reusable library modules and a binary.
-
-## The Agent Loop
-
-The core pattern is simple:
+## How It Works
 
 ```
-while stop_reason == "tool_use":
-    response = LLM(messages, tools)
-    execute tools
-    append results
-```
-
-This creates a feedback loop where the model can:
-1. Request tool execution
-2. See the results
-3. Continue until it decides to stop
-
-## Architecture
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                     Module Dependency Graph                   │
-├──────────────────────────────────────────────────────────────┤
-│                                                              │
-│   ┌─────────────┐        ┌──────────────┐                    │
-│   │   client.rs │◄───────│ agent_loop   │                    │
-│   └─────────────┘        └──┬───┬───┬───┘                    │
-│        create_message()     │   │   │                        │
-│                             │   │   │                        │
-│   ┌─────────────┐           │   │   │                        │
-│   │   tools.rs  │◄──────────┘   │   │                        │
-│   └─────────────┘  dispatch      │   │                        │
-│       dispatch_tools()           │   │                        │
-│                                  │   │                        │
-│   ┌─────────────┐               │   │                        │
-│   │  logger.rs  │◄──────────────┘   │                        │
-│   └─────────────┘  log_*()          │                        │
-│                                     │                        │
-│   ┌─────────────┐                   │                        │
-│   │help_utils.rs│◄──────────────────┘                        │
-│   └─────────────┘  (called by tools)                         │
-│                                                              │
-│   ┌──────────────┐                                           │
-│   │ s03_todo_    │  Binary entry point                       │
-│   │ write.rs     │  wires everything together                │
-│   └──────────────┘                                           │
-└──────────────────────────────────────────────────────────────┘
+User types a prompt
+    │
+    ▼
+┌──────────────────────────────────────────────────────────┐
+│  agent_loop (round N)                                    │
+│    1. validate tool_use/tool_result pairing              │
+│    2. truncate old messages (keep last 8 rounds)         │
+│    3. build API request body                             │
+│    4. log request JSON to session file                   │
+│    5. POST to /v1/messages                               │
+│    6. log response JSON to session file                  │
+│    7. if stop_reason == "tool_use":                      │
+│       a. dispatch each tool call                         │
+│       b. collect tool_result blocks                      │
+│       c. if 3+ rounds without todo: inject reminder      │
+│       d. append results, goto 1                          │
+│    8. else: return final text                            │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## Project Structure
 
 ```
 src/
-├── lib.rs              # Library root, exports all modules
-├── client.rs           # AnthropicClient (API wrapper)
-├── logger.rs           # Colored stderr logging helpers
-├── help_utils.rs       # Path helpers & tool runners (bash, read, write, edit)
+├── lib.rs              # Library root (exports 5 modules)
+├── client.rs           # AnthropicClient: API wrapper
+├── logger.rs           # SessionLogger: stderr + file logging
+├── help_utils.rs       # Path sandboxing + tool runners
 ├── tools.rs            # TOOLS schema, TodoManager, dispatch_tools
-└── s03_todo_write.rs   # Binary: main + REPL
+├── agent_loop.rs       # Core loop, validation, truncation
+└── s03_todo_write.rs   # Binary: REPL entry point
+
+logs/
+└── session_YYYYMMDD_HHMMSS.log   # Auto-generated session transcript
 ```
 
-### Library Modules
+### Module Responsibilities
 
-| Module | Purpose | Diagram |
-|--------|---------|---------|
-| `client` | `AnthropicClient` -- builds and sends requests to the Anthropic Messages API | Struct with `from_env()`, `new()`, `create_message()`, `build_request_body()` |
-| `logger` | Colored stderr output: `log_section`, `log_info`, `log_step`, `log_output_preview` | Each function targets a different visual level |
-| `help_utils` | Path sandboxing (`safe_path`, `normalize_path`) and tool runners | `safe_path` guards all runners; each returns String, never panics |
-| `tools` | TOOLS JSON schema, `TodoManager`, `dispatch_tools` router | Routes tool names to help_utils runners; manages todo state |
-| `agent_loop` | Core loop: call LLM, dispatch tools, track nag reminder | Ties client + tools + logger together |
+| Module | What it does | Key exports |
+|--------|-------------|-------------|
+| `client` | HTTP client for Anthropic Messages API | `AnthropicClient::from_env()`, `create_message()`, `send_body()` |
+| `logger` | Dual-output logging (stderr with colors + plain text file) | `SessionLogger::new(path)`, `log_api_request()`, `log_api_response()` |
+| `help_utils` | Filesystem sandbox and tool runners | `safe_path()`, `run_bash()`, `run_read()`, `run_write()`, `run_edit()` |
+| `tools` | Tool definitions, todo state management, dispatch router | `TOOLS` const, `TodoManager`, `dispatch_tools()` |
+| `agent_loop` | Core agent loop with validation and truncation | `agent_loop()`, `validate_tool_pairing()`, `truncate_messages()` |
 
-## Features
+### Tools
 
-- **5 Tools**: `bash`, `read_file`, `write_file`, `edit_file`, `todo`
-- **TodoManager**: LLM-driven task tracking with status validation
-- **Nag Reminder**: Injects `<reminder>` if the LLM skips todo updates for 3+ rounds
-- **Safety**: Dangerous commands blocked, path escape prevention, 50KB output cap
-- **Logging**: Color-coded stderr diagnostics via dedicated logger module
-- **Interactive REPL**: Continuous conversation with colored output
+| Tool | What it does |
+|------|-------------|
+| `bash` | Run shell commands (dangerous patterns blocked) |
+| `read_file` | Read file contents, optional line limit |
+| `write_file` | Write content to file, creates parent dirs |
+| `edit_file` | Replace first occurrence of text in file |
+| `todo` | Update task list (max 20 items, one in_progress at a time) |
 
-## Usage
+## Safety Features
 
-### Prerequisites
+- **Path sandboxing**: `safe_path()` rejects paths that escape the workspace
+- **Command blocking**: `run_bash()` blocks `rm -rf /`, `sudo`, `shutdown`, `reboot`, `> /dev/`
+- **Output cap**: Tool output truncated to 50KB
+- **History validation**: `validate_tool_pairing()` checks tool_use/tool_result matching before sending
+- **Conversation truncation**: `truncate_messages()` keeps last 8 rounds to prevent API overflow
+- **Error handling**: `create_message()` returns `Result` instead of panicking
 
-- Rust 1.70+
-- Anthropic API key
+## Session Logging
 
-### Setup
+Every session writes to `logs/session_YYYYMMDD_HHMMSS.log` with:
+- Full API request JSON (pretty-printed)
+- Full API response JSON (pretty-printed)
+- User input
+- Agent responses
+- Tool call details and outputs
+- API errors with structured fields (message, type, code, param)
+- Timestamps on every line
 
-1. Copy the example environment file:
+## Setup
+
 ```bash
 cp .env.example .env
-```
+# Edit .env:
+#   ANTHROPIC_API_KEY=your_key_here
+#   ANTHROPIC_BASE_URL=https://api.anthropic.com   (or DeepSeek, etc.)
+#   MODEL_ID=claude-sonnet-4-20250514
 
-2. Edit `.env` with your API key:
-```
-ANTHROPIC_API_KEY=your_key_here
-MODEL_ID=claude-sonnet-4-20250514
-```
-
-3. Build and run:
-```bash
 cargo build --release
 ./target/release/s03_todo_write
 ```
 
-### Interactive Session
-
-```
-╔══════════════════════════════════════════════════════════════╗
-║          S03 Agent Loop - TodoWrite Edition                 ║
-╚══════════════════════════════════════════════════════════════╝
-
-  model        claude-sonnet-4-20250514
-  workdir      /path/to/project
-  tools        bash, read_file, write_file, edit_file, todo
-  max_tokens   8000
-
-s03 >> List files and create a hello world script
-[Agent executes tools and shows results]
-```
-
-Type `q`, `exit`, or press Enter with empty input to quit.
+Type `q`, `exit`, or press Enter to quit.
 
 ## Testing
 
 ```bash
-cargo test
+cargo test           # Run all 65 tests
+cargo fmt            # Auto-format
+cargo clippy         # Lint check
 ```
 
-Tests are split across modules:
-
-| Module | Tests | Covers |
-|--------|-------|--------|
-| `help_utils` | 13 | Path normalization, safe_path, bash blocking, file read/write/edit |
-| `client` | 7 | Request body construction, env defaults |
+| Module | Tests | What's covered |
+|--------|-------|----------------|
+| `help_utils` | 13 | Path normalization, safe_path escapes, bash blocking, file CRUD |
+| `client` | 10 | Request body building, API error handling (401, 400, connection failure) |
 | `tools` | 14 | TOOLS schema, TodoManager validation, dispatch routing |
-| `agent_loop` | 5 | Nag reminder, messages flow, stop reasons, system prompt, tool result structure |
-| `logger` | 5 | Logging functions execute without panic |
-
-## Linting
-
-```bash
-cargo fmt          # Auto-format
-cargo clippy       # Lint check
-cargo clippy --fix # Auto-fix lint issues
-```
+| `agent_loop` | 22 | Nag reminder, tool pairing, message truncation, corrupted history detection, API error extraction |
+| `logger` | 5 | SessionLogger file creation, timestamps, stderr output |
 
 ## License
 

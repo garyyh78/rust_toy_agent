@@ -12,6 +12,15 @@ Cargo.lock
 # Environment files
 .env
 
+# Session logs
+logs/
+
 # OS files
 .DS_Store
 Thumbs.db
+
+# Compiled binaries
+*.out
+quicksort
+quicksort_random
+random_sort
