@@ -41,7 +41,8 @@
 
 use crate::client::AnthropicClient;
 use crate::logger::SessionLogger;
-use crate::tools::{dispatch_tools, TodoManager};
+use crate::todo_manager::TodoManager;
+use crate::tools::dispatch_tools;
 use serde_json::json;
 use serde_json::Value as Json;
 use std::path::Path;

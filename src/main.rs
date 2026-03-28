@@ -1,37 +1,19 @@
-//! s03_todo_write.rs - TodoWrite binary
+//! main.rs - Agent entry point
 //!
-//! Entry point for the agent. Wires up the library modules and runs
-//! the interactive REPL.
+//! Wires up the library modules and runs the interactive REPL.
 //!
-//! Module dependency graph:
-//!
-//!   ┌─────────────────────────────────────────────────────────────┐
-//!   │                 s03_todo_write.rs (binary)                  │
-//!   ├─────────────────────────────────────────────────────────────┤
-//!   │                                                             │
-//!   │   Imports:                                                  │
-//!   │     agent_loop ─── agent_loop(), Messages                   │
-//!   │     logger    ─── SessionLogger                             │
-//!   │     client    ─── AnthropicClient                           │
-//!   │     tools     ─── TodoManager, TOOLS                        │
-//!   │                                                             │
-//!   │   main() flow:                                              │
-//!   │     ┌──────────┐    ┌──────────┐    ┌──────────┐           │
-//!   │     │  init    │───→│  REPL    │───→│  agent_  │           │
-//!   │     │  client  │    │  loop    │    │  loop()  │           │
-//!   │     │  tools   │    │  read    │    │  await   │           │
-//!   │     │  todo    │    │  prompt  │    │          │           │
-//!   │     │  logger  │    │  log to  │    │  log to  │           │
-//!   │     └──────────┘    │  file    │    │  file    │           │
-//!   │                     └────┬─────┘    └──────────┘           │
-//!   │                    read_prompt() ── stdin                  │
-//!   │                    print_final_response() ── stdout        │
-//!   └─────────────────────────────────────────────────────────────┘
+//!   main.rs
+//!     ├── agent_loop   ── agent_loop(), Messages
+//!     ├── logger       ── SessionLogger
+//!     ├── client       ── AnthropicClient
+//!     ├── tools        ── TOOLS
+//!     └── todo_manager ── TodoManager
 
 use rust_toy_agent::agent_loop::{agent_loop, Messages};
 use rust_toy_agent::client::AnthropicClient;
 use rust_toy_agent::logger::SessionLogger;
-use rust_toy_agent::tools::{TodoManager, TOOLS};
+use rust_toy_agent::todo_manager::TodoManager;
+use rust_toy_agent::tools::TOOLS;
 use serde_json::Value as Json;
 use std::env;
 use std::io::{BufRead, Write};

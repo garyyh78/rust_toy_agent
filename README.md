@@ -29,16 +29,14 @@ User types a prompt
 
 ```
 src/
-├── lib.rs              # Library root (exports 5 modules)
+├── main.rs             # Binary entry point (REPL)
+├── lib.rs              # Library root (exports 6 modules)
 ├── client.rs           # AnthropicClient: API wrapper
 ├── logger.rs           # SessionLogger: stderr + file logging
 ├── help_utils.rs       # Path sandboxing + tool runners
-├── tools.rs            # TOOLS schema, TodoManager, dispatch_tools
-├── agent_loop.rs       # Core loop, validation, truncation
-└── s03_todo_write.rs   # Binary: REPL entry point
-
-logs/
-└── session_YYYYMMDD_HHMMSS.log   # Auto-generated session transcript
+├── todo_manager.rs     # TodoManager: task tracking
+├── tools.rs            # TOOLS schema + dispatch_tools router
+└── agent_loop.rs       # Core loop, validation, truncation
 ```
 
 ### Module Responsibilities
@@ -48,7 +46,8 @@ logs/
 | `client` | HTTP client for Anthropic Messages API | `AnthropicClient::from_env()`, `create_message()`, `send_body()` |
 | `logger` | Dual-output logging (stderr with colors + plain text file) | `SessionLogger::new(path)`, `log_api_request()`, `log_api_response()` |
 | `help_utils` | Filesystem sandbox and tool runners | `safe_path()`, `run_bash()`, `run_read()`, `run_write()`, `run_edit()` |
-| `tools` | Tool definitions, todo state management, dispatch router | `TOOLS` const, `TodoManager`, `dispatch_tools()` |
+| `todo_manager` | Task tracking with validation | `TodoManager::new()`, `update()`, `render()`, `items()` |
+| `tools` | Tool JSON schema and dispatch router | `TOOLS` const, `dispatch_tools()` |
 | `agent_loop` | Core agent loop with validation and truncation | `agent_loop()`, `validate_tool_pairing()`, `truncate_messages()` |
 
 ### Tools
@@ -75,8 +74,7 @@ logs/
 Every session writes to `logs/session_YYYYMMDD_HHMMSS.log` with:
 - Full API request JSON (pretty-printed)
 - Full API response JSON (pretty-printed)
-- User input
-- Agent responses
+- User input and agent responses
 - Tool call details and outputs
 - API errors with structured fields (message, type, code, param)
 - Timestamps on every line
@@ -91,7 +89,7 @@ cp .env.example .env
 #   MODEL_ID=claude-sonnet-4-20250514
 
 cargo build --release
-./target/release/s03_todo_write
+./target/release/rust_toy_agent
 ```
 
 Type `q`, `exit`, or press Enter to quit.
@@ -99,7 +97,7 @@ Type `q`, `exit`, or press Enter to quit.
 ## Testing
 
 ```bash
-cargo test           # Run all 65 tests
+cargo test           # Run all tests
 cargo fmt            # Auto-format
 cargo clippy         # Lint check
 ```
@@ -108,8 +106,9 @@ cargo clippy         # Lint check
 |--------|-------|----------------|
 | `help_utils` | 13 | Path normalization, safe_path escapes, bash blocking, file CRUD |
 | `client` | 10 | Request body building, API error handling (401, 400, connection failure) |
-| `tools` | 14 | TOOLS schema, TodoManager validation, dispatch routing |
-| `agent_loop` | 22 | Nag reminder, tool pairing, message truncation, corrupted history detection, API error extraction |
+| `todo_manager` | 16 | Validation, render format, update/replacement, boundary conditions |
+| `tools` | 8 | TOOLS schema, dispatch routing |
+| `agent_loop` | 22 | Nag reminder, tool pairing, message truncation, corrupted history, API error extraction |
 | `logger` | 5 | SessionLogger file creation, timestamps, stderr output |
 
 ## License
