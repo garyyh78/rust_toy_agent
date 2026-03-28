@@ -229,4 +229,53 @@ mod tests {
         );
         assert!(body.get("tools").is_none());
     }
+
+    // -- Error handling tests (the 400 panic fix) --
+
+    #[tokio::test]
+    async fn test_create_message_returns_err_on_bad_url() {
+        // Point at a URL that will fail to connect
+        let client = AnthropicClient::new("sk-fake", "http://127.0.0.1:1");
+        let messages = vec![serde_json::json!({"role": "user", "content": "hi"})];
+        let result = client
+            .create_message("claude-sonnet-4-20250514", None, &messages, None, 1024)
+            .await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("HTTP request failed"),
+            "Expected HTTP error, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_message_returns_err_on_api_error() {
+        // Use a real URL that returns 401 (no valid API key)
+        let client = AnthropicClient::new("sk-fake-key", "https://api.anthropic.com");
+        let messages = vec![serde_json::json!({"role": "user", "content": "hi"})];
+        let result = client
+            .create_message("claude-sonnet-4-20250514", None, &messages, None, 1024)
+            .await;
+        assert!(result.is_err(), "Should return Err, not panic");
+        let err = result.unwrap_err();
+        assert!(
+            err.contains("Anthropic API error"),
+            "Expected API error message, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_create_message_err_contains_status_code() {
+        let client = AnthropicClient::new("bad-key", "https://api.anthropic.com");
+        let messages = vec![serde_json::json!({"role": "user", "content": "test"})];
+        let result = client
+            .create_message("claude-sonnet-4-20250514", None, &messages, None, 256)
+            .await;
+        let err = result.unwrap_err();
+        // Should contain a status code like "401" or "400"
+        assert!(
+            err.contains("401") || err.contains("400") || err.contains("403"),
+            "Expected status code in error, got: {err}"
+        );
+    }
 }

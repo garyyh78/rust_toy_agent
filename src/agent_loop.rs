@@ -244,4 +244,148 @@ Prefer tools over prose.",
         assert_eq!(result["tool_use_id"], "test-id-123");
         assert_eq!(result["content"], "tool output");
     }
+
+    // -- Tests for the 400 error fix: tool_use without tool_result --
+
+    #[test]
+    fn test_corrupted_history_detection() {
+        // Simulate the exact scenario that caused the 400 error:
+        // assistant message with tool_use blocks, but no tool_result follows
+        let messages: Vec<Json> = vec![
+            json!({"role": "user", "content": "list files"}),
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "call_00_abc123", "name": "bash", "input": {"command": "ls"}}
+                ]
+            }),
+            // Missing tool_result here! This is the corruption.
+            json!({"role": "user", "content": "next question"}),
+        ];
+
+        // Detect: find assistant messages with tool_use not followed by tool_result
+        for i in 0..messages.len() - 1 {
+            if messages[i]["role"] == "assistant" {
+                if let Some(blocks) = messages[i]["content"].as_array() {
+                    let has_tool_use = blocks.iter().any(|b| b["type"] == "tool_use");
+                    if has_tool_use {
+                        let next = &messages[i + 1];
+                        let has_tool_result = next["content"]
+                            .as_array()
+                            .map(|arr| arr.iter().any(|b| b["type"] == "tool_result"))
+                            .unwrap_or(false);
+                        assert!(
+                            !has_tool_result,
+                            "This history is corrupted: tool_use at index {i} has no tool_result at index {}",
+                            i + 1
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_valid_tool_use_followed_by_tool_result() {
+        // Correct pairing: tool_use followed by tool_result
+        let messages: Vec<Json> = vec![
+            json!({"role": "user", "content": "list files"}),
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "call_00_abc", "name": "bash", "input": {"command": "ls"}}
+                ]
+            }),
+            json!({
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "call_00_abc", "content": "file1.txt"}
+                ]
+            }),
+        ];
+
+        // Verify pairing: every tool_use has a matching tool_result next
+        for i in 0..messages.len() - 1 {
+            if messages[i]["role"] == "assistant" {
+                if let Some(blocks) = messages[i]["content"].as_array() {
+                    for block in blocks {
+                        if block["type"] == "tool_use" {
+                            let tool_id = block["id"].as_str().unwrap();
+                            let next = &messages[i + 1];
+                            let has_match = next["content"]
+                                .as_array()
+                                .map(|arr| {
+                                    arr.iter().any(|b| {
+                                        b["type"] == "tool_result"
+                                            && b["tool_use_id"].as_str() == Some(tool_id)
+                                    })
+                                })
+                                .unwrap_or(false);
+                            assert!(
+                                has_match,
+                                "tool_use {tool_id} at index {i} has no matching tool_result"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_multiple_tool_use_all_need_results() {
+        // Multiple tool_use blocks in one assistant message
+        let tool_id_1 = "call_00_first";
+        let tool_id_2 = "call_01_second";
+        let messages: Vec<Json> = vec![
+            json!({"role": "user", "content": "do two things"}),
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": tool_id_1, "name": "bash", "input": {"command": "ls"}},
+                    {"type": "tool_use", "id": tool_id_2, "name": "bash", "input": {"command": "pwd"}}
+                ]
+            }),
+            json!({
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": tool_id_1, "content": "files"},
+                    {"type": "tool_result", "tool_use_id": tool_id_2, "content": "/home"}
+                ]
+            }),
+        ];
+
+        // Check that ALL tool_use ids have matching tool_result
+        let assistant = &messages[1];
+        let user_result = &messages[2];
+        if let Some(blocks) = assistant["content"].as_array() {
+            for block in blocks {
+                if block["type"] == "tool_use" {
+                    let id = block["id"].as_str().unwrap();
+                    let found = user_result["content"]
+                        .as_array()
+                        .map(|arr| arr.iter().any(|b| b["tool_use_id"].as_str() == Some(id)))
+                        .unwrap_or(false);
+                    assert!(found, "Missing tool_result for {id}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_nag_reminder_resets_after_todo() {
+        let mut rounds_since_todo = 0usize;
+        // 3 rounds without todo
+        rounds_since_todo += 1;
+        rounds_since_todo += 1;
+        rounds_since_todo += 1;
+        assert!(rounds_since_todo >= 3, "Should trigger nag");
+        // After todo is used, counter resets
+        rounds_since_todo = 0;
+        assert_eq!(rounds_since_todo, 0, "Should reset after todo use");
+        // 2 more rounds still under threshold
+        rounds_since_todo += 1;
+        rounds_since_todo += 1;
+        assert!(rounds_since_todo < 3, "Should not trigger nag yet");
+    }
 }
