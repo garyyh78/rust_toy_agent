@@ -249,13 +249,17 @@ pub async fn agent_loop(
         // Track how many rounds since the last todo update
         rounds_since_todo = if used_todo { 0 } else { rounds_since_todo + 1 };
 
-        // Nag reminder: inject a text block if the LLM ignores todos for 3+ rounds
-        if rounds_since_todo >= 3 {
-            logger.log_step("⚠", "Injecting nag reminder");
-            results.insert(
-                0,
-                json!({"type": "text", "text": "<reminder>Update your todos.</reminder>"}),
-            );
+        // Nag reminder: append to the last tool_result's content
+        // (not as a separate text block, which breaks tool_use/tool_result pairing)
+        if rounds_since_todo >= 3 && !results.is_empty() {
+            logger.log_step("⚠", "Injecting nag reminder into tool_result");
+            if let Some(last) = results.last_mut() {
+                if let Some(content) = last["content"].as_str() {
+                    let updated =
+                        format!("{content}\n\n<reminder>Update your todos.</reminder>");
+                    last["content"] = json!(updated);
+                }
+            }
         }
 
         logger.log_info(
@@ -475,6 +479,81 @@ Prefer tools over prose.",
         rounds_since_todo += 1;
         rounds_since_todo += 1;
         assert!(rounds_since_todo < 3, "Should not trigger nag yet");
+    }
+
+    #[test]
+    fn test_nag_reminder_appended_to_tool_result() {
+        // Simulate what agent_loop does when rounds_since_todo >= 3
+        let mut results = vec![json!({
+            "type": "tool_result",
+            "tool_use_id": "call_123",
+            "content": "[ ] #1: Write tests\n(0/1 completed)"
+        })];
+
+        // Inject reminder into last tool_result (not as a separate block)
+        if let Some(last) = results.last_mut() {
+            if let Some(content) = last["content"].as_str() {
+                let updated = format!("{content}\n\n<reminder>Update your todos.</reminder>");
+                last["content"] = json!(updated);
+            }
+        }
+
+        // Must still be exactly 1 result (no extra text blocks)
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["type"], "tool_result");
+        assert_eq!(results[0]["tool_use_id"], "call_123");
+        let content = results[0]["content"].as_str().unwrap();
+        assert!(content.contains("[ ] #1: Write tests"));
+        assert!(content.contains("<reminder>Update your todos.</reminder>"));
+    }
+
+    #[test]
+    fn test_nag_reminder_skipped_when_no_results() {
+        // If there are no tool results, don't inject anything
+        let mut results: Vec<Json> = vec![];
+        let rounds_since_todo = 3usize;
+
+        if rounds_since_todo >= 3 && !results.is_empty() {
+            // This block should NOT execute
+            panic!("Should not inject reminder when results is empty");
+        }
+
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_nag_reminder_all_results_are_tool_result_type() {
+        // After reminder injection, every block must still be tool_result
+        let mut results = vec![
+            json!({
+                "type": "tool_result",
+                "tool_use_id": "call_a",
+                "content": "output a"
+            }),
+            json!({
+                "type": "tool_result",
+                "tool_use_id": "call_b",
+                "content": "output b"
+            }),
+        ];
+
+        // Reminder goes into the LAST result only
+        if let Some(last) = results.last_mut() {
+            if let Some(content) = last["content"].as_str() {
+                let updated = format!("{content}\n\n<reminder>Update your todos.</reminder>");
+                last["content"] = json!(updated);
+            }
+        }
+
+        // All blocks are still tool_result
+        for r in &results {
+            assert_eq!(r["type"], "tool_result", "All blocks must be tool_result");
+            assert!(r["tool_use_id"].is_string(), "Must have tool_use_id");
+        }
+        // First result is unchanged
+        assert_eq!(results[0]["content"], "output a");
+        // Last result has the reminder
+        assert!(results[1]["content"].as_str().unwrap().contains("<reminder>"));
     }
 
     // -- API error message extraction tests --

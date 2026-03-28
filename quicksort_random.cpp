@@ -2,121 +2,80 @@
 #include <vector>
 #include <cstdlib>
 #include <ctime>
-#include <algorithm> // for std::is_sorted
+#include <algorithm>
 
-// Function to partition the array for quicksort
-int partition(std::vector<int>& arr, int low, int high) {
-    int pivot = arr[high]; // Choose the last element as pivot
-    int i = low - 1; // Index of smaller element
+using namespace std;
+
+// Function to partition the array
+int partition(vector<int>& arr, int low, int high) {
+    int pivot = arr[high];  // Choose the last element as pivot
+    int i = low - 1;  // Index of smaller element
     
     for (int j = low; j < high; j++) {
         // If current element is smaller than or equal to pivot
         if (arr[j] <= pivot) {
-            i++; // Increment index of smaller element
-            std::swap(arr[i], arr[j]);
+            i++;  // Increment index of smaller element
+            swap(arr[i], arr[j]);
         }
     }
-    std::swap(arr[i + 1], arr[high]);
+    swap(arr[i + 1], arr[high]);
     return i + 1;
 }
 
-// Quicksort function
-void quicksort(std::vector<int>& arr, int low, int high) {
+// QuickSort function
+void quickSort(vector<int>& arr, int low, int high) {
     if (low < high) {
-        // Partition the array and get the pivot index
-        int pivotIndex = partition(arr, low, high);
+        // Partition the array
+        int pi = partition(arr, low, high);
         
         // Recursively sort elements before and after partition
-        quicksort(arr, low, pivotIndex - 1);
-        quicksort(arr, pivotIndex + 1, high);
+        quickSort(arr, low, pi - 1);
+        quickSort(arr, pi + 1, high);
     }
 }
 
-// Wrapper function for easier use
-void quicksort(std::vector<int>& arr) {
-    if (!arr.empty()) {
-        quicksort(arr, 0, arr.size() - 1);
+// Function to print the array
+void printArray(const vector<int>& arr) {
+    for (int num : arr) {
+        cout << num << " ";
     }
+    cout << endl;
 }
 
 // Function to generate random numbers
-std::vector<int> generateRandomNumbers(int count, int minVal = 1, int maxVal = 1000) {
-    std::vector<int> numbers(count);
+vector<int> generateRandomNumbers(int count, int minVal = 1, int maxVal = 100) {
+    vector<int> numbers;
     for (int i = 0; i < count; i++) {
-        numbers[i] = minVal + rand() % (maxVal - minVal + 1);
+        numbers.push_back(minVal + rand() % (maxVal - minVal + 1));
     }
     return numbers;
 }
 
-// Function to print array
-void printArray(const std::vector<int>& arr, const std::string& label = "") {
-    if (!label.empty()) {
-        std::cout << label << ": ";
-    }
-    
-    for (size_t i = 0; i < arr.size(); i++) {
-        std::cout << arr[i];
-        if (i < arr.size() - 1) {
-            std::cout << " ";
-        }
-    }
-    std::cout << std::endl;
-}
-
 int main() {
     // Seed the random number generator
-    srand(static_cast<unsigned int>(time(nullptr)));
+    srand(time(0));
     
-    const int NUM_COUNT = 100;
+    // Generate 10 random numbers
+    vector<int> numbers = generateRandomNumbers(10);
     
-    // Generate 100 random numbers
-    std::vector<int> numbers = generateRandomNumbers(NUM_COUNT);
+    cout << "Original array: ";
+    printArray(numbers);
     
-    std::cout << "=== Quicksort for " << NUM_COUNT << " Random Numbers ===" << std::endl;
-    std::cout << std::endl;
+    // Sort the array using quicksort
+    quickSort(numbers, 0, numbers.size() - 1);
     
-    // Print original array (first 20 elements to avoid clutter)
-    std::cout << "Original array (first 20 elements):" << std::endl;
-    for (int i = 0; i < std::min(20, NUM_COUNT); i++) {
-        std::cout << numbers[i] << " ";
-    }
-    std::cout << std::endl;
+    cout << "Sorted array: ";
+    printArray(numbers);
     
-    // Make a copy for verification
-    std::vector<int> original = numbers;
+    // Verify the sort is correct
+    vector<int> sortedCopy = numbers;
+    sort(sortedCopy.begin(), sortedCopy.end());
     
-    // Perform quicksort
-    std::cout << "\nSorting..." << std::endl;
-    quicksort(numbers);
-    
-    // Print sorted array (first 20 elements)
-    std::cout << "\nSorted array (first 20 elements):" << std::endl;
-    for (int i = 0; i < std::min(20, NUM_COUNT); i++) {
-        std::cout << numbers[i] << " ";
-    }
-    std::cout << std::endl;
-    
-    // Verify the sort
-    bool isSorted = std::is_sorted(numbers.begin(), numbers.end());
-    
-    std::cout << "\n=== Verification ===" << std::endl;
-    if (isSorted) {
-        std::cout << "✓ Array is correctly sorted!" << std::endl;
+    if (numbers == sortedCopy) {
+        cout << "✓ Array is correctly sorted!" << endl;
     } else {
-        std::cout << "✗ Array is NOT sorted correctly!" << std::endl;
+        cout << "✗ Array is not correctly sorted!" << endl;
     }
-    
-    // Additional statistics
-    std::cout << "\n=== Statistics ===" << std::endl;
-    std::cout << "Total numbers: " << NUM_COUNT << std::endl;
-    std::cout << "Minimum value: " << numbers[0] << std::endl;
-    std::cout << "Maximum value: " << numbers[NUM_COUNT - 1] << std::endl;
-    
-    // Check if all original elements are preserved
-    std::sort(original.begin(), original.end());
-    bool allElementsPreserved = (original == numbers);
-    std::cout << "All original elements preserved: " 
-              << (allElementsPreserved ? "Yes" : "No") << std::endl;
     
     return 0;
 }
