@@ -56,6 +56,51 @@ pub type Messages = Vec<Json>;
 // The "nag" counter injects a reminder if the LLM forgets its todos.
 
 #[allow(clippy::too_many_arguments)]
+/// Validate that every tool_use block has a matching tool_result immediately after.
+/// Returns an error description if pairing is broken.
+fn validate_tool_pairing(messages: &[Json]) -> Option<String> {
+    for i in 0..messages.len() - 1 {
+        if messages[i]["role"] == "assistant" {
+            if let Some(blocks) = messages[i]["content"].as_array() {
+                for block in blocks {
+                    if block["type"] == "tool_use" {
+                        let tool_id = block["id"].as_str().unwrap_or("unknown");
+                        let next = &messages[i + 1];
+                        let has_result = next["content"]
+                            .as_array()
+                            .map(|arr| {
+                                arr.iter().any(|b| {
+                                    b["type"] == "tool_result"
+                                        && b["tool_use_id"].as_str() == Some(tool_id)
+                                })
+                            })
+                            .unwrap_or(false);
+                        if !has_result {
+                            return Some(format!(
+                                "tool_use {tool_id} at index {i} has no matching tool_result at index {}",
+                                i + 1
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Keep only the last N conversation rounds to prevent history bloat.
+/// Always preserves the first user message (index 0).
+fn truncate_messages(messages: &mut Messages, max_rounds: usize) {
+    // Each round = 2 messages (assistant + user tool_result)
+    let max_messages = 1 + max_rounds * 2; // first user + N rounds
+    if messages.len() > max_messages {
+        let remove_count = messages.len() - max_messages;
+        messages.drain(1..1 + remove_count);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 pub async fn agent_loop(
     client: &AnthropicClient,
     model: &str,
@@ -77,6 +122,18 @@ pub async fn agent_loop(
 
         // Build the request body, log it, then send
         logger.log_step("→", "Calling Anthropic API...");
+
+        // Validate tool_use/tool_result pairing before sending
+        if let Some(err) = validate_tool_pairing(messages) {
+            logger.log_section("History Validation Error");
+            eprintln!("\x1b[31m  {err}\x1b[0m");
+            logger.log_info("status", "Corrupted history, stopping loop");
+            return;
+        }
+
+        // Truncate old messages to keep conversation size manageable
+        truncate_messages(messages, 8);
+
         let body = AnthropicClient::build_request_body(
             model,
             Some(system),
