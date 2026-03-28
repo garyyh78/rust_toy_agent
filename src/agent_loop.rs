@@ -40,7 +40,7 @@
 //!   └──────────────────────────────────────────────┘
 
 use crate::client::AnthropicClient;
-use crate::logger::{log_info, log_output_preview, log_section, log_step};
+use crate::logger::SessionLogger;
 use crate::tools::{dispatch_tools, TodoManager};
 use serde_json::json;
 use serde_json::Value as Json;
@@ -55,6 +55,7 @@ pub type Messages = Vec<Json>;
 // and append tool_result blocks back into the conversation.
 // The "nag" counter injects a reminder if the LLM forgets its todos.
 
+#[allow(clippy::too_many_arguments)]
 pub async fn agent_loop(
     client: &AnthropicClient,
     model: &str,
@@ -63,27 +64,28 @@ pub async fn agent_loop(
     messages: &mut Messages,
     workdir: &Path,
     todo: &Arc<Mutex<TodoManager>>,
+    logger: &mut SessionLogger,
 ) {
     let mut round = 0usize;
     let mut rounds_since_todo = 0usize;
     loop {
         round += 1;
-        log_section(&format!("Agent Loop Round {round}"));
-        log_info("history", &format!("{} messages", messages.len()));
-        log_info("model", model);
+        logger.log_section(&format!("Agent Loop Round {round}"));
+        logger.log_info("history", &format!("{} messages", messages.len()));
+        logger.log_info("model", model);
         eprintln!();
 
         // Call the Anthropic API with current conversation state
-        log_step("→", "Calling Anthropic API...");
+        logger.log_step("→", "Calling Anthropic API...");
         let response = match client
             .create_message(model, Some(system), messages, Some(tools), 8000)
             .await
         {
             Ok(r) => r,
             Err(e) => {
-                log_section("Agent Error");
+                logger.log_section("Agent Error");
                 eprintln!("\x1b[31m  {e}\x1b[0m");
-                log_info("status", "API call failed, stopping loop");
+                logger.log_info("status", "API call failed, stopping loop");
                 return;
             }
         };
@@ -96,11 +98,11 @@ pub async fn agent_loop(
         let usage = &response["usage"];
         let input_tokens = usage["input_tokens"].as_u64().unwrap_or(0);
         let output_tokens = usage["output_tokens"].as_u64().unwrap_or(0);
-        log_info(
+        logger.log_info(
             "tokens",
             &format!("{input_tokens} in / {output_tokens} out"),
         );
-        log_info("stop", &stop_reason);
+        logger.log_info("stop", &stop_reason);
         eprintln!();
 
         // Append the assistant's response to conversation history
@@ -108,8 +110,8 @@ pub async fn agent_loop(
 
         // If the model didn't request tool use, we're done
         if stop_reason != "tool_use" {
-            log_section("Agent Response");
-            log_info("status", "Complete - no tool use");
+            logger.log_section("Agent Response");
+            logger.log_info("status", "Complete - no tool use");
             return;
         }
 
@@ -118,7 +120,7 @@ pub async fn agent_loop(
             .map(|blocks| blocks.iter().filter(|b| b["type"] == "tool_use").count())
             .unwrap_or(0);
 
-        log_info("tools", &format!("{tool_count} tool call(s) requested"));
+        logger.log_info("tools", &format!("{tool_count} tool call(s) requested"));
         eprintln!();
 
         // Iterate over content blocks and dispatch each tool_use
@@ -131,11 +133,11 @@ pub async fn agent_loop(
                     let tool_name = block["name"].as_str().unwrap_or("unknown");
                     let tool_id = block["id"].as_str().unwrap_or("unknown");
 
-                    log_step(
+                    logger.log_step(
                         &format!("[{}]", i + 1),
                         &format!("{tool_name}: \x1b[1m{:?}\x1b[0m", block["input"]),
                     );
-                    log_info("id", &tool_id[..std::cmp::min(8, tool_id.len())]);
+                    logger.log_info("id", &tool_id[..std::cmp::min(8, tool_id.len())]);
 
                     let (output, did_todo) =
                         dispatch_tools(tool_name, &block["input"], workdir, todo);
@@ -144,8 +146,8 @@ pub async fn agent_loop(
                         used_todo = true;
                     }
 
-                    log_info("output", &format!("{} bytes", output.len()));
-                    log_output_preview(&output);
+                    logger.log_info("output", &format!("{} bytes", output.len()));
+                    logger.log_output_preview(&output);
                     eprintln!();
 
                     // Each result becomes a tool_result block in the next message
@@ -163,14 +165,14 @@ pub async fn agent_loop(
 
         // Nag reminder: inject a text block if the LLM ignores todos for 3+ rounds
         if rounds_since_todo >= 3 {
-            log_step("⚠", "Injecting nag reminder");
+            logger.log_step("⚠", "Injecting nag reminder");
             results.insert(
                 0,
                 json!({"type": "text", "text": "<reminder>Update your todos.</reminder>"}),
             );
         }
 
-        log_info(
+        logger.log_info(
             "results",
             &format!("{} tool result(s) ready", results.len()),
         );

@@ -1,58 +1,60 @@
-//! logger.rs - Colored stderr logging helpers
+//! logger.rs - Colored stderr logging with optional session file logging
 //!
 //! All diagnostic output goes to stderr so stdout stays clean for the REPL.
-//! Each function produces a different visual level:
+//! When a `SessionLogger` is used, the same output is also written to a
+//! timestamped log file (without ANSI colors).
 //!
 //! ┌──────────────────────────────────────────────────────────────┐
-//! │ log_section  ───────────────────────────────────────────     │
-//! │ Blue header banner separating major phases                   │
+//! │                      SessionLogger                           │
+//! ├──────────────────────────────────────────────────────────────┤
+//! │                                                              │
+//! │   new("logs/session.log")                                   │
+//! │       │                                                     │
+//! │       ├── writes to stderr (with colors)                    │
+//! │       └── writes to file  (plain text, timestamped)         │
+//! │                                                              │
+//! │   log_section("Round 1")     → stderr + file                │
+//! │   log_info("model", "claude") → stderr + file               │
+//! │   log_step("→", "calling API") → stderr + file              │
+//! │   log_output_preview(output)  → stderr (5 lines) + file     │
+//! │                                                              │
+//! │   log_user_input("list files")  → file only                 │
+//! │   log_agent_response("done")    → file only                 │
+//! │                                                              │
+//! │   Free functions (no file):                                 │
+//! │   ┌────────────┐  ┌──────────┐  ┌──────────┐               │
+//! │   │log_section │  │log_info  │  │log_step  │               │
+//! │   └────────────┘  └──────────┘  └──────────┘               │
+//! │   ┌──────────────────┐                                      │
+//! │   │log_output_preview│                                      │
+//! │   └──────────────────┘                                      │
 //! └──────────────────────────────────────────────────────────────┘
-//!    log_info       label          value
-//!    log_step       →              detail
-//!    log_output_preview  ─  first 5 lines of output
-//!
-//! Function call graph:
-//!
-//!   agent_loop ──→ log_section("Round N")
-//!       │
-//!       ├──→ log_info("history", ...)
-//!       ├──→ log_info("model", ...)
-//!       ├──→ log_info("tokens", ...)
-//!       ├──→ log_info("stop", ...)
-//!       │
-//!       ├──→ log_step("→", "Calling API...")
-//!       ├──→ log_step("[1]", "bash: ...")
-//!       ├──→ log_step("⚠", "Injecting nag reminder")
-//!       │
-//!       └──→ log_output_preview(output)
-//!                └── shows first 5 lines, then "... (N more)"
-//!
-//! main() ──→ log_info("model", ...)
-//!        ──→ log_info("workdir", ...)
 
-/// Blue bordered section header for major loop phases.
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
+use std::path::Path;
+
+// -- Free functions (stderr only, no file) --
+
 pub fn log_section(title: &str) {
     eprintln!("\x1b[34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
     eprintln!("\x1b[34m {}\x1b[0m", title);
     eprintln!("\x1b[34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
 }
 
-/// Cyan label-value pair for key-value diagnostic info.
 pub fn log_info(label: &str, value: &str) {
     eprintln!("\x1b[36m  {:<12}\x1b[0m {}", label, value);
 }
 
-/// Yellow step marker for action descriptions within a section.
 pub fn log_step(step: &str, detail: &str) {
-    eprintln!("\x1b[33m  {}\x1b[0m {}", step, detail);
+    eprintln!("\x1b[33m  {step}\x1b[0m {detail}");
 }
 
-/// Gray preview of tool output: first 5 lines, then a truncation note.
 pub fn log_output_preview(output: &str) {
     let lines: Vec<&str> = output.lines().take(5).collect();
     let truncated = output.lines().count() > 5;
     for line in &lines {
-        eprintln!("\x1b[90m    {}\x1b[0m", line);
+        eprintln!("\x1b[90m    {line}\x1b[0m");
     }
     if truncated {
         eprintln!(
@@ -62,12 +64,113 @@ pub fn log_output_preview(output: &str) {
     }
 }
 
+// -- SessionLogger (stderr + file) --
+
+/// Logs to both stderr (colored) and a plain-text session file.
+pub struct SessionLogger {
+    file: Option<File>,
+}
+
+impl SessionLogger {
+    /// Create a logger that writes to stderr only (no file).
+    pub fn stderr_only() -> Self {
+        Self { file: None }
+    }
+
+    /// Open a log file at `path`, creating parent directories as needed.
+    /// Also writes to stderr.
+    pub fn new(path: &str) -> Result<Self, String> {
+        if let Some(parent) = Path::new(path).parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("Failed to create log dir: {e}"))?;
+        }
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .map_err(|e| format!("Failed to open log file {path}: {e}"))?;
+        Ok(Self { file: Some(file) })
+    }
+
+    /// Write a line to the log file (no-op if no file).
+    fn write_file(&mut self, line: &str) {
+        if let Some(ref mut f) = self.file {
+            let _ = writeln!(f, "{line}");
+        }
+    }
+
+    /// Get current timestamp as HH:MM:SS.
+    fn timestamp() -> String {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        let secs = now.as_secs();
+        let hours = (secs / 3600) % 24;
+        let minutes = (secs / 60) % 60;
+        let seconds = secs % 60;
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
+    }
+
+    pub fn log_section(&mut self, title: &str) {
+        log_section(title);
+        self.write_file(&format!("[{}] === {} ===", Self::timestamp(), title));
+    }
+
+    pub fn log_info(&mut self, label: &str, value: &str) {
+        log_info(label, value);
+        self.write_file(&format!(
+            "[{}]   {:<12} {}",
+            Self::timestamp(),
+            label,
+            value
+        ));
+    }
+
+    pub fn log_step(&mut self, step: &str, detail: &str) {
+        log_step(step, detail);
+        self.write_file(&format!("[{}]   {step} {detail}", Self::timestamp()));
+    }
+
+    pub fn log_output_preview(&mut self, output: &str) {
+        log_output_preview(output);
+        // Write full output to file (not truncated)
+        for line in output.lines() {
+            self.write_file(&format!("[{}]     {line}", Self::timestamp()));
+        }
+    }
+
+    /// Log user input to file only (not stderr, since it's already shown via prompt).
+    pub fn log_user_input(&mut self, input: &str) {
+        self.write_file(&format!("[{}] USER > {input}", Self::timestamp()));
+    }
+
+    /// Log final agent text response to file.
+    pub fn log_agent_response(&mut self, text: &str) {
+        for line in text.lines() {
+            self.write_file(&format!("[{}] AGENT < {line}", Self::timestamp()));
+        }
+    }
+
+    /// Log a session start marker.
+    pub fn log_session_start(&mut self, model: &str, workdir: &str) {
+        self.write_file("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        self.write_file(&format!(
+            "[{}] SESSION START: model={model} workdir={workdir}",
+            Self::timestamp()
+        ));
+        self.write_file("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    }
+
+    /// Log a session end marker.
+    pub fn log_session_end(&mut self) {
+        self.write_file(&format!("[{}] SESSION END", Self::timestamp()));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // log functions write to stderr and return ().
-    // We verify they don't panic; output is visual only.
+    // -- Free function tests --
 
     #[test]
     fn test_log_section_runs() {
@@ -92,9 +195,83 @@ mod tests {
     #[test]
     fn test_log_output_preview_long() {
         let long = (1..=10)
-            .map(|i| format!("line {}", i))
+            .map(|i| format!("line {i}"))
             .collect::<Vec<_>>()
             .join("\n");
         log_output_preview(&long);
+    }
+
+    // -- SessionLogger tests --
+
+    #[test]
+    fn test_session_logger_stderr_only() {
+        let mut logger = SessionLogger::stderr_only();
+        logger.log_section("test");
+        logger.log_info("key", "value");
+        logger.log_step("→", "step");
+        logger.log_output_preview("line1\nline2");
+        logger.log_user_input("hello");
+        logger.log_agent_response("response");
+    }
+
+    #[test]
+    fn test_session_logger_creates_file() {
+        let tmp = std::env::temp_dir().join("rust_toy_agent_session_test.log");
+        let path = tmp.to_str().unwrap();
+        let _ = std::fs::remove_file(&tmp);
+
+        let mut logger = SessionLogger::new(path).unwrap();
+        logger.log_session_start("test-model", "/tmp");
+        logger.log_section("Round 1");
+        logger.log_info("model", "test");
+        logger.log_step("→", "calling API");
+        logger.log_output_preview("output line 1\noutput line 2");
+        logger.log_user_input("list files");
+        logger.log_agent_response("Here are the files.");
+        logger.log_session_end();
+
+        let content = std::fs::read_to_string(&tmp).unwrap();
+        assert!(content.contains("SESSION START"));
+        assert!(content.contains("Round 1"));
+        assert!(content.contains("USER > list files"));
+        assert!(content.contains("AGENT < Here are the files."));
+        assert!(content.contains("SESSION END"));
+        assert!(content.contains("output line 1"));
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_session_logger_creates_parent_dirs() {
+        let tmp = std::env::temp_dir().join("rust_agent_test_sub/nested/session.log");
+        let path = tmp.to_str().unwrap();
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_dir_all(tmp.parent().unwrap().parent().unwrap());
+
+        let mut logger = SessionLogger::new(path).unwrap();
+        logger.log_info("test", "nested dir");
+
+        assert!(tmp.exists());
+        let content = std::fs::read_to_string(&tmp).unwrap();
+        assert!(content.contains("nested dir"));
+        let _ = std::fs::remove_dir_all(tmp.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn test_session_logger_timestamp_format() {
+        let ts = SessionLogger::timestamp();
+        // Should be HH:MM:SS (10 chars with colons)
+        assert_eq!(ts.len(), 8);
+        assert_eq!(ts.as_bytes()[2], b':');
+        assert_eq!(ts.as_bytes()[5], b':');
+    }
+
+    #[test]
+    fn test_session_logger_no_file_no_panic() {
+        let mut logger = SessionLogger::stderr_only();
+        // Should not panic even without a file
+        logger.log_user_input("test");
+        logger.log_agent_response("response");
+        logger.log_session_start("m", "/d");
+        logger.log_session_end();
     }
 }

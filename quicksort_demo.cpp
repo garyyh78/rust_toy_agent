@@ -2,25 +2,21 @@
 #include <vector>
 #include <cstdlib>
 #include <ctime>
-#include <algorithm> // for std::is_sorted
+#include <algorithm>
+#include <iomanip>
 
 // Function to partition the array for quicksort
 int partition(std::vector<int>& arr, int low, int high) {
-    // Choose the rightmost element as pivot
     int pivot = arr[high];
-    
-    // Index of smaller element
     int i = low - 1;
     
     for (int j = low; j < high; j++) {
-        // If current element is smaller than or equal to pivot
         if (arr[j] <= pivot) {
             i++;
             std::swap(arr[i], arr[j]);
         }
     }
     
-    // Place pivot in correct position
     std::swap(arr[i + 1], arr[high]);
     return i + 1;
 }
@@ -28,10 +24,7 @@ int partition(std::vector<int>& arr, int low, int high) {
 // Recursive quicksort function
 void quicksort(std::vector<int>& arr, int low, int high) {
     if (low < high) {
-        // Partition the array
         int pivot_index = partition(arr, low, high);
-        
-        // Recursively sort elements before and after partition
         quicksort(arr, low, pivot_index - 1);
         quicksort(arr, pivot_index + 1, high);
     }
@@ -55,23 +48,26 @@ std::vector<int> generate_random_numbers(int count, int min_val = 1, int max_val
     return numbers;
 }
 
-// Function to print array
-void print_array(const std::vector<int>& arr, const std::string& label = "") {
+// Function to print array in a grid format
+void print_array_grid(const std::vector<int>& arr, const std::string& label = "", int columns = 10) {
     if (!label.empty()) {
         std::cout << label << std::endl;
     }
     
+    std::cout << std::string(columns * 5, '-') << std::endl;
+    
     for (size_t i = 0; i < arr.size(); i++) {
-        std::cout << arr[i];
-        if (i < arr.size() - 1) {
-            std::cout << " ";
-        }
-        // Print newline every 10 numbers for better readability
-        if ((i + 1) % 10 == 0) {
+        std::cout << std::setw(4) << arr[i] << " ";
+        if ((i + 1) % columns == 0) {
             std::cout << std::endl;
         }
     }
-    std::cout << std::endl;
+    
+    if (arr.size() % columns != 0) {
+        std::cout << std::endl;
+    }
+    
+    std::cout << std::string(columns * 5, '-') << std::endl;
 }
 
 int main() {
@@ -80,38 +76,43 @@ int main() {
     
     const int NUM_COUNT = 100;
     
-    std::cout << "Generating " << NUM_COUNT << " random numbers..." << std::endl;
+    std::cout << "=== QUICKSORT DEMONSTRATION ===" << std::endl;
+    std::cout << "Generating " << NUM_COUNT << " random numbers (1-1000)..." << std::endl;
+    
     std::vector<int> numbers = generate_random_numbers(NUM_COUNT);
     
-    std::cout << "\nOriginal array (first 20 numbers):" << std::endl;
-    // Print only first 20 numbers to avoid cluttering output
-    for (int i = 0; i < 20 && i < NUM_COUNT; i++) {
-        std::cout << numbers[i] << " ";
-    }
-    std::cout << std::endl;
+    std::cout << "\nORIGINAL RANDOM NUMBERS (100 total):" << std::endl;
+    print_array_grid(numbers, "", 10);
     
-    std::cout << "\nSorting using quicksort..." << std::endl;
+    std::cout << "\nSorting using quicksort algorithm..." << std::endl;
     quicksort(numbers);
     
-    std::cout << "\nSorted array (first 20 numbers):" << std::endl;
-    // Print only first 20 numbers to avoid cluttering output
-    for (int i = 0; i < 20 && i < NUM_COUNT; i++) {
-        std::cout << numbers[i] << " ";
-    }
-    std::cout << std::endl;
+    std::cout << "\nSORTED NUMBERS (ascending order):" << std::endl;
+    print_array_grid(numbers, "", 10);
     
     // Verify the array is sorted
     if (std::is_sorted(numbers.begin(), numbers.end())) {
-        std::cout << "\n✓ Array is correctly sorted!" << std::endl;
+        std::cout << "\n✓ VERIFICATION: Array is correctly sorted!" << std::endl;
     } else {
-        std::cout << "\n✗ Array is NOT sorted correctly!" << std::endl;
+        std::cout << "\n✗ VERIFICATION: Array is NOT sorted correctly!" << std::endl;
     }
     
-    // Print min and max values
+    // Print statistics
     if (!numbers.empty()) {
-        std::cout << "\nMinimum value: " << numbers[0] << std::endl;
+        std::cout << "\n=== STATISTICS ===" << std::endl;
+        std::cout << "Total numbers: " << NUM_COUNT << std::endl;
+        std::cout << "Minimum value: " << numbers[0] << std::endl;
         std::cout << "Maximum value: " << numbers[NUM_COUNT - 1] << std::endl;
+        
+        // Calculate average
+        double sum = 0;
+        for (int num : numbers) {
+            sum += num;
+        }
+        std::cout << "Average value: " << std::fixed << std::setprecision(2) << sum / NUM_COUNT << std::endl;
     }
+    
+    std::cout << "\nProgram completed successfully!" << std::endl;
     
     return 0;
 }
