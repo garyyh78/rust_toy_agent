@@ -114,6 +114,33 @@ impl AnthropicClient {
         serde_json::from_str(&text).map_err(|e| format!("Failed to parse API response: {e}"))
     }
 
+    /// Send a pre-built request body to the API.
+    /// Used when the caller needs to inspect/log the body before sending.
+    pub async fn send_body(&self, body: &Json) -> Result<Json, String> {
+        let url = format!("{}/v1/messages", self.base_url);
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| format!("HTTP request failed: {e}"))?;
+
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read response body: {e}"))?;
+        if !status.is_success() {
+            return Err(format!("Anthropic API error {status}: {text}"));
+        }
+        serde_json::from_str(&text).map_err(|e| format!("Failed to parse API response: {e}"))
+    }
+
     /// Build the request body JSON without sending it.
     /// Useful for inspecting or logging what would be sent.
     pub fn build_request_body(

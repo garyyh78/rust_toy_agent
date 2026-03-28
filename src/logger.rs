@@ -150,6 +150,43 @@ impl SessionLogger {
         }
     }
 
+    /// Log the full API request JSON to file.
+    pub fn log_api_request(&mut self, body: &serde_json::Value) {
+        self.write_file(&format!(
+            "[{}] ── API REQUEST ──────────────────────────────",
+            Self::timestamp()
+        ));
+        for line in serde_json::to_string_pretty(body)
+            .unwrap_or_default()
+            .lines()
+        {
+            self.write_file(&format!("[{}]   {line}", Self::timestamp()));
+        }
+    }
+
+    /// Log the full API response JSON to file.
+    pub fn log_api_response(&mut self, body: &serde_json::Value) {
+        self.write_file(&format!(
+            "[{}] ── API RESPONSE ─────────────────────────────",
+            Self::timestamp()
+        ));
+        for line in serde_json::to_string_pretty(body)
+            .unwrap_or_default()
+            .lines()
+        {
+            self.write_file(&format!("[{}]   {line}", Self::timestamp()));
+        }
+    }
+
+    /// Log an API error string to file.
+    pub fn log_api_error(&mut self, error: &str) {
+        self.write_file(&format!(
+            "[{}] ── API ERROR ────────────────────────────────",
+            Self::timestamp()
+        ));
+        self.write_file(&format!("[{}]   {error}", Self::timestamp()));
+    }
+
     /// Log a session start marker.
     pub fn log_session_start(&mut self, model: &str, workdir: &str) {
         self.write_file("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");

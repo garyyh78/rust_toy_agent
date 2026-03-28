@@ -75,14 +75,24 @@ pub async fn agent_loop(
         logger.log_info("model", model);
         eprintln!();
 
-        // Call the Anthropic API with current conversation state
+        // Build the request body, log it, then send
         logger.log_step("→", "Calling Anthropic API...");
-        let response = match client
-            .create_message(model, Some(system), messages, Some(tools), 8000)
-            .await
-        {
-            Ok(r) => r,
+        let body = AnthropicClient::build_request_body(
+            model,
+            Some(system),
+            messages,
+            Some(tools),
+            8000,
+        );
+        logger.log_api_request(&body);
+
+        let response = match client.send_body(&body).await {
+            Ok(r) => {
+                logger.log_api_response(&r);
+                r
+            }
             Err(e) => {
+                logger.log_api_error(&e);
                 logger.log_section("Agent Error");
                 eprintln!("\x1b[31m  {e}\x1b[0m");
                 // Try to extract structured error from API JSON body
