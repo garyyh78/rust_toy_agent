@@ -63,7 +63,7 @@ impl AnthropicClient {
     }
 
     /// Send a messages request to the Anthropic API.
-    /// Returns the full JSON response; panics on HTTP or parse errors.
+    /// Returns the full JSON response on success, or an error string on failure.
     pub async fn create_message(
         &self,
         model: &str,
@@ -71,7 +71,7 @@ impl AnthropicClient {
         messages: &[Json],
         tools: Option<&Json>,
         max_tokens: u32,
-    ) -> Json {
+    ) -> Result<Json, String> {
         // Build the request body, omitting optional fields when empty
         let url = format!("{}/v1/messages", self.base_url);
         let mut body = serde_json::json!({
@@ -100,16 +100,18 @@ impl AnthropicClient {
             .json(&body)
             .send()
             .await
-            .expect("HTTP request failed");
+            .map_err(|e| format!("HTTP request failed: {e}"))?;
 
-        // Check for API errors and panic with details
+        // Check for API errors
         let status = resp.status();
-        let text = resp.text().await.expect("Failed to read response body");
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read response body: {e}"))?;
         if !status.is_success() {
-            eprintln!("\x1b[31m[api] error {status}: {text}\x1b[0m");
-            panic!("Anthropic API error {status}: {text}");
+            return Err(format!("Anthropic API error {status}: {text}"));
         }
-        serde_json::from_str(&text).expect("Failed to parse API response")
+        serde_json::from_str(&text).map_err(|e| format!("Failed to parse API response: {e}"))
     }
 
     /// Build the request body JSON without sending it.

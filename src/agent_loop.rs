@@ -75,9 +75,18 @@ pub async fn agent_loop(
 
         // Call the Anthropic API with current conversation state
         log_step("→", "Calling Anthropic API...");
-        let response = client
+        let response = match client
             .create_message(model, Some(system), messages, Some(tools), 8000)
-            .await;
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                log_section("Agent Error");
+                eprintln!("\x1b[31m  {e}\x1b[0m");
+                log_info("status", "API call failed, stopping loop");
+                return;
+            }
+        };
 
         // Extract stop_reason to decide whether to continue the loop
         let stop_reason = response["stop_reason"].as_str().unwrap_or("").to_string();
