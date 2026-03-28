@@ -85,6 +85,25 @@ pub async fn agent_loop(
             Err(e) => {
                 logger.log_section("Agent Error");
                 eprintln!("\x1b[31m  {e}\x1b[0m");
+                // Try to extract structured error from API JSON body
+                if let Some(pos) = e.find('{') {
+                    if let Ok(parsed) = serde_json::from_str::<Json>(&e[pos..]) {
+                        let err = &parsed["error"];
+                        if let Some(msg) = err["message"].as_str() {
+                            logger.log_info("message", msg);
+                            eprintln!("\x1b[31m  message: {msg}\x1b[0m");
+                        }
+                        if let Some(err_type) = err["type"].as_str() {
+                            logger.log_info("type", err_type);
+                        }
+                        if let Some(code) = err["code"].as_str() {
+                            logger.log_info("code", code);
+                        }
+                        if let Some(param) = err["param"].as_str() {
+                            logger.log_info("param", param);
+                        }
+                    }
+                }
                 logger.log_info("status", "API call failed, stopping loop");
                 return;
             }
@@ -389,5 +408,72 @@ Prefer tools over prose.",
         rounds_since_todo += 1;
         rounds_since_todo += 1;
         assert!(rounds_since_todo < 3, "Should not trigger nag yet");
+    }
+
+    // -- API error message extraction tests --
+
+    fn extract_api_error(error_str: &str) -> Option<Json> {
+        // Find the first '{' to extract the JSON body from the error string
+        if let Some(pos) = error_str.find('{') {
+            serde_json::from_str::<Json>(&error_str[pos..]).ok()
+        } else {
+            None
+        }
+    }
+
+    #[test]
+    fn test_extract_400_tool_use_error() {
+        let error_str = r#"Anthropic API error 400 Bad Request: {"error":{"message":"messages.18: `tool_use` ids were found without `tool_result` blocks immediately after: call_00_BcFuzGiYOXapzyCLqM0pSMoh. Each `tool_use` block must have a corresponding `tool_result` block in the next message.","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#;
+
+        let parsed = extract_api_error(error_str).expect("Should parse JSON");
+        let err = &parsed["error"];
+        assert!(err["message"]
+            .as_str()
+            .unwrap()
+            .contains("tool_use` ids were found without `tool_result`"));
+        assert_eq!(err["type"], "invalid_request_error");
+        assert_eq!(err["code"], "invalid_request_error");
+        assert!(err["param"].is_null());
+    }
+
+    #[test]
+    fn test_extract_401_auth_error() {
+        let error_str = r#"Anthropic API error 401 Unauthorized: {"error":{"message":"Invalid API key","type":"authentication_error","code":"invalid_api_key"}}"#;
+
+        let parsed = extract_api_error(error_str).expect("Should parse JSON");
+        let err = &parsed["error"];
+        assert_eq!(err["message"], "Invalid API key");
+        assert_eq!(err["type"], "authentication_error");
+        assert_eq!(err["code"], "invalid_api_key");
+    }
+
+    #[test]
+    fn test_extract_429_rate_limit_error() {
+        let error_str = r#"Anthropic API error 429 Too Many Requests: {"error":{"message":"Rate limit exceeded","type":"rate_limit_error","code":"rate_limit_exceeded"}}"#;
+
+        let parsed = extract_api_error(error_str).expect("Should parse JSON");
+        let err = &parsed["error"];
+        assert_eq!(err["message"], "Rate limit exceeded");
+        assert_eq!(err["type"], "rate_limit_error");
+    }
+
+    #[test]
+    fn test_extract_non_json_error_returns_none() {
+        let error_str = "HTTP request failed: connection refused";
+        let parsed = extract_api_error(error_str);
+        assert!(parsed.is_none());
+    }
+
+    #[test]
+    fn test_extract_error_message_fields() {
+        // Verify we can extract each field independently
+        let error_str = r#"Anthropic API error 400: {"error":{"message":"bad request","type":"invalid_request_error","param":"messages[0].content","code":"invalid_value"}}"#;
+
+        let parsed = extract_api_error(error_str).expect("Should parse JSON");
+        let err = &parsed["error"];
+        assert_eq!(err["message"].as_str().unwrap(), "bad request");
+        assert_eq!(err["type"].as_str().unwrap(), "invalid_request_error");
+        assert_eq!(err["param"].as_str().unwrap(), "messages[0].content");
+        assert_eq!(err["code"].as_str().unwrap(), "invalid_value");
     }
 }
