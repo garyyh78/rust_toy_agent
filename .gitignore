@@ -12,6 +12,9 @@ Cargo.lock
 # Environment files
 .env
 
+# materials for Agent
+materials/
+
 # Session logs
 logs/
 

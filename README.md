@@ -1,6 +1,6 @@
 # Rust Toy Agent
 
-A minimal AI coding agent in Rust. It talks to the Anthropic API (or any compatible endpoint like DeepSeek), executes tools in a loop, and tracks multi-step tasks with a built-in todo system.
+A minimal AI coding agent in Rust. It talks to the Anthropic API (or any compatible endpoint like DeepSeek), executes tools in a loop, and tracks multi-step tasks with a built-in todo system. Now includes advanced agent patterns: subagents, skill loading, and context compression.
 
 ## How It Works
 
@@ -30,13 +30,16 @@ User types a prompt
 ```
 src/
 ├── main.rs             # Binary entry point (REPL)
-├── lib.rs              # Library root (exports 6 modules)
+├── lib.rs              # Library root (exports 9 modules)
 ├── client.rs           # AnthropicClient: API wrapper
 ├── logger.rs           # SessionLogger: stderr + file logging
 ├── help_utils.rs       # Path sandboxing + tool runners
 ├── todo_manager.rs     # TodoManager: task tracking
 ├── tools.rs            # TOOLS schema + dispatch_tools router
-└── agent_loop.rs       # Core loop, validation, truncation
+├── agent_loop.rs       # Core loop, validation, truncation
+├── subagent.rs         # Subagent system: spawn child agents with fresh context
+├── skill_loading.rs    # Two-layer skill injection: metadata + on-demand loading
+└── context_compact.rs  # Three-layer context compression pipeline
 ```
 
 ### Module Responsibilities
@@ -49,6 +52,9 @@ src/
 | `todo_manager` | Task tracking with validation | `TodoManager::new()`, `update()`, `render()`, `items()` |
 | `tools` | Tool JSON schema and dispatch router | `TOOLS` const, `dispatch_tools()` |
 | `agent_loop` | Core agent loop with validation and truncation | `agent_loop()`, `validate_tool_pairing()`, `truncate_messages()` |
+| `subagent` | Spawn child agents with fresh context | `Subagent::new()`, `run_subagent()`, `agent_loop()` |
+| `skill_loading` | Two-layer skill injection system | `SkillLoader::new()`, `get_descriptions()`, `get_content()`, `SkillAgent` |
+| `context_compact` | Three-layer context compression pipeline | `ContextCompactor::new()`, `micro_compact()`, `auto_compact()`, `agent_loop()` |
 
 ### Tools
 
@@ -59,6 +65,65 @@ src/
 | `write_file` | Write content to file, creates parent dirs |
 | `edit_file` | Replace first occurrence of text in file |
 | `todo` | Update task list (max 20 items, one in_progress at a time) |
+| `task` | Spawn a subagent with fresh context (subagent module) |
+| `load_skill` | Load specialized knowledge by name (skill_loading module) |
+| `compact` | Trigger manual conversation compression (context_compact module) |
+
+## Advanced Agent Patterns
+
+### Subagent System (`subagent.rs`)
+
+Spawn child agents with fresh context. The child works in its own context, sharing the filesystem, then returns only a summary to the parent.
+
+```
+Parent agent                     Subagent
++------------------+             +------------------+
+| messages=[...]   |             | messages=[]      |  <-- fresh
+|                  |  dispatch   |                  |
+| tool: task       | ---------->| while tool_use:  |
+|   prompt="..."   |            |   call tools     |
+|   description="" |            |   append results |
+|                  |  summary   |                  |
+|   result = "..." | <--------- | return last text |
++------------------+             +------------------+
+```
+
+**Key insight**: "Process isolation gives context isolation for free."
+
+### Skill Loading (`skill_loading.rs`)
+
+Two-layer skill injection that avoids bloating the system prompt:
+
+- **Layer 1 (cheap)**: Skill names in system prompt (~100 tokens/skill)
+- **Layer 2 (on demand)**: Full skill body in tool_result
+
+```
+Skills directory structure:
+skills/
+  pdf/
+    SKILL.md          <-- frontmatter (name, description) + body
+  code-review/
+    SKILL.md
+```
+
+**Key insight**: "Don't put everything in the system prompt. Load on demand."
+
+### Context Compression (`context_compact.rs`)
+
+Three-layer compression pipeline for long-running agents:
+
+1. **Layer 1: micro_compact** (silent, every turn)
+   - Replace tool_result content older than last 3 with "[Previous: used {tool_name}]"
+
+2. **Layer 2: auto_compact** (when tokens > 50000)
+   - Save full transcript to `.transcripts/`
+   - Ask LLM to summarize conversation
+   - Replace all messages with [summary]
+
+3. **Layer 3: manual compact** (triggered by compact tool)
+   - Same as auto, but triggered manually by the model
+
+**Key insight**: "The agent can forget strategically and keep working forever."
 
 ## Safety Features
 
@@ -110,6 +175,9 @@ cargo clippy         # Lint check
 | `tools` | 8 | TOOLS schema, dispatch routing |
 | `agent_loop` | 22 | Nag reminder, tool pairing, message truncation, corrupted history, API error extraction |
 | `logger` | 5 | SessionLogger file creation, timestamps, stderr output |
+| `subagent` | 3 | Subagent creation, tool dispatch, child tools |
+| `skill_loading` | 7 | Frontmatter parsing, skill loader, skill agent, system prompt |
+| `context_compact` | 5 | Token estimation, micro_compact, tool dispatch, compactor creation |
 
 ## License
 
