@@ -167,6 +167,31 @@ Results are auto-committed to git after each test run.
 | `subagent` | 3 | Subagent creation, tool dispatch, child tools |
 | `skill_loading` | 7 | Frontmatter parsing, skill loader, skill agent, system prompt |
 | `context_compact` | 5 | Token estimation, micro_compact, tool dispatch, compactor creation |
+| `e2e_test` | 3 | Test runner, test result tracking with tokens and steps |
+
+## End-to-End Tests
+
+The project includes E2E tests to evaluate the agent on real programming tasks. Each test runs the agent in a clean workspace, tracks execution time, token usage, and number of steps.
+
+| Test | Language | Expected Output |
+|------|----------|-----------------|
+| `sum_1_to_n` | Python | 50005000 |
+| `fibonacci_sum` | C++ | 2178308 |
+| `prime_sum` | TypeScript | 3682913 |
+
+Run tests:
+
+```bash
+# Run individual tests
+cargo e2e-sum   # sum 1 to 10000
+cargo e2e-fib   # sum first 30 Fibonacci numbers
+cargo e2e-prime # sum first 1000 primes
+
+# Run all tests sequentially
+./run_all_e2e.sh
+```
+
+Test results are saved to `task_tests/test_results/` with model name, commit hash, execution time, token counts, and step count. Results are auto-committed to git after each run.
 
 ## License
 
