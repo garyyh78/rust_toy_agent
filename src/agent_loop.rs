@@ -144,6 +144,10 @@ pub async fn agent_loop(
             Some(tools),
             MAX_TOKENS,
         );
+        let body_json = serde_json::to_string(&body).unwrap_or_default();
+        let body_len = body_json.len();
+        logger.log_info("request_size", &format!("{} bytes", body_len));
+        logger.log_info("max_tokens", &MAX_TOKENS.to_string());
         logger.log_api_request(&body);
 
         let response = match client.send_body(&body).await {
