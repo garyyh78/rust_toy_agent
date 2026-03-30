@@ -1,6 +1,6 @@
 {
-  "name": "pi_series",
-  "prompt": "Write a Python program to calculate pi to at least 100 decimal places using the Nilakantha series expansion. Then count the occurrence frequency of each digit (0-9) in the decimal portion and output in table format with columns 'Digit' and 'Count'. Sort by digit in ascending order.",
-  "expected_output": "Digit | Count\n0    | 8\n1    | 8\n2    | 12\n3    | 11\n4    | 10\n5    | 8\n6    | 9\n7    | 8\n8    | 12\n9    | 13",
+  "name": "sum_1_to_n",
+  "prompt": "Write a Python program to add up all integers from 1 to N=10000. Then verify the answer matches the formula N*(N+1)/2. Print only the final verified answer.",
+  "expected_output": "50005000",
   "language": "python"
 }

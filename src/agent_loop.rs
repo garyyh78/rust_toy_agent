@@ -124,7 +124,7 @@ pub async fn agent_loop(
         eprintln!();
 
         // Build the request body, log it, then send
-        logger.log_step("→", "Calling Anthropic API...");
+        logger.log_step("→", &format!("Calling Agent Model ({model})..."));
 
         // Validate tool_use/tool_result pairing before sending
         if let Some(err) = validate_tool_pairing(messages) {
