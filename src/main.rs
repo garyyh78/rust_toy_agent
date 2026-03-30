@@ -62,7 +62,7 @@ fn print_usage() {
     eprintln!("  rust_toy_agent --test pi_series   # Run the pi_series test");
 }
 
-fn run_test_mode(test_name: &str) {
+async fn run_test_mode(test_name: &str) {
     let workdir = env::current_dir().unwrap();
     let test_path = workdir.join("task_tests").join(test_name).join("test.json");
     let results_dir = workdir.join("task_tests").join("test_results");
@@ -89,47 +89,44 @@ fn run_test_mode(test_name: &str) {
     eprintln!("  Path: {}", test_path.display());
     eprintln!();
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        let client = AnthropicClient::from_env();
-        let model = env::var("MODEL_ID").expect("MODEL_ID not set");
+    let client = AnthropicClient::from_env();
+    let model = env::var("MODEL_ID").expect("MODEL_ID not set");
 
-        let log_path = format!(
-            "logs/test_{}_{}.log",
-            test_name,
-            chrono::Local::now().format("%Y%m%d_%H%M%S")
-        );
-        let mut logger = match SessionLogger::new(&log_path) {
-            Ok(l) => {
-                eprintln!("\x1b[36m  Log file  \x1b[0m {log_path}");
-                l
-            }
-            Err(e) => {
-                eprintln!("\x1b[33m  Warning: {e}\x1b[0m");
-                SessionLogger::stderr_only()
-            }
-        };
-
-        let todo = Arc::new(Mutex::new(TodoManager::new()));
-
-        let result = run_test(&client, &model, &test_case, &PathBuf::from("/tmp"), &todo, &mut logger).await;
-
-        if let Err(e) = save_test_result(&result, &results_dir) {
-            eprintln!("Error saving test result: {}", e);
-        } else {
-            println!("  Result saved to: {}", results_dir.join(format!("{}_{}.json", result.name, result.test_time)).display());
+    let log_path = format!(
+        "logs/test_{}_{}.log",
+        test_name,
+        chrono::Local::now().format("%Y%m%d_%H%M%S")
+    );
+    let mut logger = match SessionLogger::new(&log_path) {
+        Ok(l) => {
+            eprintln!("\x1b[36m  Log file  \x1b[0m {log_path}");
+            l
         }
-
-        commit_test_result(&result);
-
-        print_test_result(&result);
-
-        if result.passed {
-            std::process::exit(0);
-        } else {
-            std::process::exit(1);
+        Err(e) => {
+            eprintln!("\x1b[33m  Warning: {e}\x1b[0m");
+            SessionLogger::stderr_only()
         }
-    });
+    };
+
+    let todo = Arc::new(Mutex::new(TodoManager::new()));
+
+    let result = run_test(&client, &model, &test_case, &PathBuf::from("/tmp"), &todo, &mut logger).await;
+
+    if let Err(e) = save_test_result(&result, &results_dir) {
+        eprintln!("Error saving test result: {}", e);
+    } else {
+        println!("  Result saved to: {}", results_dir.join(format!("{}_{}.json", result.name, result.test_time)).display());
+    }
+
+    commit_test_result(&result);
+
+    print_test_result(&result);
+
+    if result.passed {
+        std::process::exit(0);
+    } else {
+        std::process::exit(1);
+    }
 }
 
 fn commit_test_result(result: &rust_toy_agent::e2e_test::TestResult) {
@@ -182,6 +179,8 @@ fn commit_test_result(result: &rust_toy_agent::e2e_test::TestResult) {
 
 #[tokio::main]
 async fn main() {
+    dotenvy::dotenv().ok();
+
     let args: Vec<String> = env::args().collect();
 
     if args.iter().any(|a| a == "-h" || a == "--help") {
@@ -191,7 +190,7 @@ async fn main() {
 
     if let Some(idx) = args.iter().position(|a| a == "--test") {
         if let Some(test_name) = args.get(idx + 1) {
-            run_test_mode(test_name);
+            run_test_mode(test_name).await;
             return;
         } else {
             eprintln!("Error: --test requires a test name argument");
@@ -199,8 +198,6 @@ async fn main() {
             std::process::exit(1);
         }
     }
-
-    dotenvy::dotenv().ok();
 
     let workdir = env::current_dir().unwrap();
     let client = AnthropicClient::from_env();
@@ -237,7 +234,7 @@ Prefer tools over prose.",
     logger.log_info("model", &model);
     logger.log_info("workdir", &workdir.display().to_string());
     logger.log_info("tools", "bash, read_file, write_file, edit_file, todo");
-    logger.log_info("max_tokens", "8000");
+    logger.log_info("max_tokens", "16384");
     eprintln!("\x1b[34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
     eprintln!();
     logger.log_session_start(&model, &workdir.display().to_string());

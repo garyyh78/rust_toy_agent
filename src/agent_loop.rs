@@ -48,6 +48,8 @@ use serde_json::Value as Json;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+const MAX_TOKENS: u32 = 16 * 1024;
+
 /// The conversation history is a vector of JSON message objects.
 pub type Messages = Vec<Json>;
 
@@ -140,7 +142,7 @@ pub async fn agent_loop(
             Some(system),
             messages,
             Some(tools),
-            8000,
+            MAX_TOKENS,
         );
         logger.log_api_request(&body);
 
