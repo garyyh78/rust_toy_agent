@@ -49,12 +49,13 @@ src/
 | `client` | HTTP client for Anthropic Messages API | `AnthropicClient::from_env()`, `create_message()`, `send_body()` |
 | `logger` | Dual-output logging (stderr with colors + plain text file) | `SessionLogger::new(path)`, `log_api_request()`, `log_api_response()` |
 | `help_utils` | Filesystem sandbox and tool runners | `safe_path()`, `run_bash()`, `run_read()`, `run_write()`, `run_edit()` |
-| `todo_manager` | Task tracking with validation | `TodoManager::new()`, `update()`, `render()`, `items()` |
+| `todo_manager` | Task tracking with validation (max 32 items) | `TodoManager::new()`, `update()`, `render()`, `items()` |
 | `tools` | Tool JSON schema and dispatch router | `TOOLS` const, `dispatch_tools()` |
-| `agent_loop` | Core agent loop with validation and truncation | `agent_loop()`, `validate_tool_pairing()`, `truncate_messages()` |
+| `agent_loop` | Core agent loop with validation, truncation (MAX_TOKENS) | `agent_loop()`, `validate_tool_pairing()`, `truncate_messages()`, `MAX_TOKENS` |
 | `subagent` | Spawn child agents with fresh context | `Subagent::new()`, `run_subagent()`, `agent_loop()` |
-| `skill_loading` | Two-layer skill injection system | `SkillLoader::new()`, `get_descriptions()`, `get_content()`, `SkillAgent` |
-| `context_compact` | Three-layer context compression pipeline | `ContextCompactor::new()`, `micro_compact()`, `auto_compact()`, `agent_loop()` |
+| `skill_loading` | Two-layer skill injection: metadata + on-demand loading | `SkillLoader::new()`, `get_descriptions()`, `get_content()` |
+| `context_compact` | Three-layer context compression pipeline | `ContextCompactor::new()`, `micro_compact()`, `auto_compact()`, `compact()` |
+| `e2e_test` | End-to-end test runner with result tracking | `run_test()`, `load_test_case()`, `save_test_result()` |
 
 ### Tools
 
@@ -68,62 +69,6 @@ src/
 | `task` | Spawn a subagent with fresh context (subagent module) |
 | `load_skill` | Load specialized knowledge by name (skill_loading module) |
 | `compact` | Trigger manual conversation compression (context_compact module) |
-
-## Advanced Agent Patterns
-
-### Subagent System (`subagent.rs`)
-
-Spawn child agents with fresh context. The child works in its own context, sharing the filesystem, then returns only a summary to the parent.
-
-```
-Parent agent                     Subagent
-+------------------+             +------------------+
-| messages=[...]   |             | messages=[]      |  <-- fresh
-|                  |  dispatch   |                  |
-| tool: task       | ---------->| while tool_use:  |
-|   prompt="..."   |            |   call tools     |
-|   description="" |            |   append results |
-|                  |  summary   |                  |
-|   result = "..." | <--------- | return last text |
-+------------------+             +------------------+
-```
-
-**Key insight**: "Process isolation gives context isolation for free."
-
-### Skill Loading (`skill_loading.rs`)
-
-Two-layer skill injection that avoids bloating the system prompt:
-
-- **Layer 1 (cheap)**: Skill names in system prompt (~100 tokens/skill)
-- **Layer 2 (on demand)**: Full skill body in tool_result
-
-```
-Skills directory structure:
-skills/
-  pdf/
-    SKILL.md          <-- frontmatter (name, description) + body
-  code-review/
-    SKILL.md
-```
-
-**Key insight**: "Don't put everything in the system prompt. Load on demand."
-
-### Context Compression (`context_compact.rs`)
-
-Three-layer compression pipeline for long-running agents:
-
-1. **Layer 1: micro_compact** (silent, every turn)
-   - Replace tool_result content older than last 3 with "[Previous: used {tool_name}]"
-
-2. **Layer 2: auto_compact** (when tokens > 50000)
-   - Save full transcript to `.transcripts/`
-   - Ask LLM to summarize conversation
-   - Replace all messages with [summary]
-
-3. **Layer 3: manual compact** (triggered by compact tool)
-   - Same as auto, but triggered manually by the model
-
-**Key insight**: "The agent can forget strategically and keep working forever."
 
 ## Safety Features
 
