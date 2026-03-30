@@ -1,0 +1,6 @@
+{
+  "name": "prime_sum",
+  "prompt": "Write a TypeScript program to find and sum the first 1000 prime numbers. Print only the final sum.",
+  "expected_output": "3682913",
+  "language": "typescript"
+}

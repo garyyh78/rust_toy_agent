@@ -1,0 +1,6 @@
+{
+  "name": "fibonacci_sum",
+  "prompt": "Write a C++ program to calculate and sum the first 30 Fibonacci numbers (F1 to F30). Print only the final sum.",
+  "expected_output": "2178308",
+  "language": "cpp"
+}
