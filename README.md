@@ -167,6 +167,50 @@ cargo fmt            # Auto-format
 cargo clippy         # Lint check
 ```
 
+### End-to-End Tests
+
+Run E2E tests to evaluate the agent on real programming tasks:
+
+```bash
+# Run a specific test
+cargo run -- --test pi_series
+
+# Run all tests in task_tests/
+for dir in task_tests/*/; do
+    test_name=$(basename "$dir")
+    cargo run -- --test "$test_name"
+done
+```
+
+**Test Structure:**
+
+```
+task_tests/
+├── pi_series/
+│   └── test.json          # Test case definition
+└── test_results/          # Auto-generated results
+    └── pi_series_<timestamp>.json
+```
+
+**Test JSON format:**
+
+```json
+{
+  "name": "pi_series",
+  "prompt": "Write a Python program to...",
+  "expected_output": "expected result",
+  "language": "python"
+}
+```
+
+**Test Results include:**
+- Model name and git commit hash
+- Test timestamp
+- Execution time (ms)
+- Token count (input/output)
+
+Results are auto-committed to git after each test run.
+
 | Module | Tests | What's covered |
 |--------|-------|----------------|
 | `help_utils` | 13 | Path normalization, safe_path escapes, bash blocking, file CRUD |
