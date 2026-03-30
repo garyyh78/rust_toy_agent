@@ -16,6 +16,9 @@ dotenvy = "0.15"
 uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
 
+[dev-dependencies]
+tempfile = "3"
+
 [aliases]
 e2e-sum = "run -- --test sum_1_to_n"
 e2e-fib = "run -- --test fibonacci_sum"

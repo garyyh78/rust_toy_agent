@@ -1,4 +1,5 @@
 pub mod agent_loop;
+pub mod background_tasks;
 pub mod client;
 pub mod context_compact;
 pub mod e2e_test;
@@ -6,5 +7,6 @@ pub mod help_utils;
 pub mod logger;
 pub mod skill_loading;
 pub mod subagent;
+pub mod task_system;
 pub mod todo_manager;
 pub mod tools;
