@@ -110,7 +110,9 @@ async fn run_test_mode(test_name: &str) {
 
     let todo = Arc::new(Mutex::new(TodoManager::new()));
 
-    let result = run_test(&client, &model, &test_case, &PathBuf::from("/tmp"), &todo, &mut logger).await;
+    let test_workdir = workdir.join("task_tests").join(test_name).join("workspace");
+        std::fs::create_dir_all(&test_workdir).ok();
+        let result = run_test(&client, &model, &test_case, &test_workdir, &todo, &mut logger).await;
 
     if let Err(e) = save_test_result(&result, &results_dir) {
         eprintln!("Error saving test result: {}", e);
