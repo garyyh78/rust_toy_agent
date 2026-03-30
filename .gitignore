@@ -18,6 +18,9 @@ materials/
 # Session logs
 logs/
 
+# Test workspaces
+task_tests/*/workspace/
+
 # OS files
 .DS_Store
 Thumbs.db

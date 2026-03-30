@@ -111,6 +111,7 @@ async fn run_test_mode(test_name: &str) {
     let todo = Arc::new(Mutex::new(TodoManager::new()));
 
     let test_workdir = workdir.join("task_tests").join(test_name).join("workspace");
+        std::fs::remove_dir_all(&test_workdir).ok();
         std::fs::create_dir_all(&test_workdir).ok();
         let result = run_test(&client, &model, &test_case, &test_workdir, &todo, &mut logger).await;
 
