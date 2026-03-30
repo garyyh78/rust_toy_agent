@@ -27,6 +27,7 @@ pub struct TestResult {
     pub commit: String,
     pub test_time: String,
     pub passed: bool,
+    pub steps: u32,
     pub actual_output: String,
     pub expected_output: String,
     pub total_time_ms: u64,
@@ -84,8 +85,6 @@ pub async fn run_test(
     logger: &mut SessionLogger,
 ) -> TestResult {
     let start_time = Instant::now();
-    let mut total_input_tokens: u64 = 0;
-    let mut total_output_tokens: u64 = 0;
     let commit = get_git_commit();
     let test_time = get_test_timestamp();
 
@@ -99,7 +98,7 @@ Prefer tools over prose.",
     let tools: Json = serde_json::from_str(TOOLS).unwrap();
     let mut history: Messages = vec![serde_json::json!({"role": "user", "content": test_case.prompt})];
 
-    agent_loop(
+    let (total_input_tokens, total_output_tokens, steps) = agent_loop(
         client,
         model,
         &system,
@@ -116,13 +115,6 @@ Prefer tools over prose.",
     let elapsed = start_time.elapsed();
     let total_time_ms = elapsed.as_millis() as u64;
 
-    if let Some(last) = history.last() {
-        if let Some(usage) = last["usage"].as_object() {
-            total_input_tokens = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-            total_output_tokens = usage.get("output_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-        }
-    }
-
     let actual_output = response_text.trim().to_string();
     let expected_output = test_case.expected_output.trim().to_string();
 
@@ -134,6 +126,7 @@ Prefer tools over prose.",
         commit,
         test_time,
         passed,
+        steps,
         actual_output,
         expected_output,
         total_time_ms,

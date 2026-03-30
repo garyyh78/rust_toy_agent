@@ -113,7 +113,7 @@ pub async fn agent_loop(
     workdir: &Path,
     todo: &Arc<Mutex<TodoManager>>,
     logger: &mut SessionLogger,
-) -> (u64, u64) {
+) -> (u64, u64, u32) {
     let mut total_input_tokens: u64 = 0;
     let mut total_output_tokens: u64 = 0;
     let mut round = 0usize;
@@ -133,7 +133,7 @@ pub async fn agent_loop(
             logger.log_section("History Validation Error");
             eprintln!("\x1b[31m  {err}\x1b[0m");
             logger.log_info("status", "Corrupted history, stopping loop");
-            return (0, 0);
+            return (0, 0, 0);
         }
 
         // Truncate old messages to keep conversation size manageable
@@ -181,7 +181,7 @@ pub async fn agent_loop(
                     }
                 }
                 logger.log_info("status", "API call failed, stopping loop");
-                return (total_input_tokens, total_output_tokens);
+                return (total_input_tokens, total_output_tokens, round as u32);
             }
         };
 
@@ -209,7 +209,7 @@ pub async fn agent_loop(
         if stop_reason != "tool_use" {
             logger.log_section("Agent Response");
             logger.log_info("status", "Complete - no tool use");
-            return (total_input_tokens, total_output_tokens);
+            return (total_input_tokens, total_output_tokens, round as u32);
         }
 
         let tool_count = content
