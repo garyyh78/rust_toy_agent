@@ -37,7 +37,7 @@ impl SkillLoader {
         loader.load_all();
         loader
     }
-    
+
     /// Load all skills from the skills directory
     fn load_all(&mut self) {
         let skills_dir = self.skills_dir.clone();
@@ -45,12 +45,12 @@ impl SkillLoader {
         if !skills_path.exists() {
             return;
         }
-        
+
         let mut skills = HashMap::new();
         Self::walk_directory_static(skills_path, &mut skills);
         self.skills = skills;
     }
-    
+
     /// Recursively walk directory to find SKILL.md files (static version)
     fn walk_directory_static(dir: &Path, skills: &mut HashMap<String, Skill>) {
         if let Ok(entries) = std::fs::read_dir(dir) {
@@ -63,18 +63,21 @@ impl SkillLoader {
                         if let Ok(content) = std::fs::read_to_string(&path) {
                             let (meta, body) = Self::parse_frontmatter_static(&content);
                             let name = meta.name.clone();
-                            skills.insert(name, Skill {
-                                meta,
-                                body,
-                                path: path.to_string_lossy().to_string(),
-                            });
+                            skills.insert(
+                                name,
+                                Skill {
+                                    meta,
+                                    body,
+                                    path: path.to_string_lossy().to_string(),
+                                },
+                            );
                         }
                     }
                 }
             }
         }
     }
-    
+
     /// Parse YAML frontmatter between --- delimiters
     fn parse_frontmatter_static(text: &str) -> (SkillMeta, String) {
         let parts: Vec<&str> = text.splitn(3, "---\n").collect();
@@ -88,14 +91,14 @@ impl SkillLoader {
                 text.to_string(),
             );
         }
-        
+
         let frontmatter = parts[1];
         let body = parts[2].trim().to_string();
-        
+
         let mut name = "unknown".to_string();
         let mut description = "No description".to_string();
         let mut tags = String::new();
-        
+
         for line in frontmatter.lines() {
             if let Some((key, value)) = line.split_once(':') {
                 let key = key.trim();
@@ -108,7 +111,7 @@ impl SkillLoader {
                 }
             }
         }
-        
+
         (
             SkillMeta {
                 name,
@@ -118,18 +121,18 @@ impl SkillLoader {
             body,
         )
     }
-    
+
     /// Parse YAML frontmatter between --- delimiters (instance method)
     fn parse_frontmatter(&self, text: &str) -> (SkillMeta, String) {
         Self::parse_frontmatter_static(text)
     }
-    
+
     /// Layer 1: short descriptions for the system prompt
     pub fn get_descriptions(&self) -> String {
         if self.skills.is_empty() {
             return "(no skills available)".to_string();
         }
-        
+
         let mut lines = Vec::new();
         for (name, skill) in &self.skills {
             let mut line = format!("  - {}: {}", name, skill.meta.description);
@@ -138,17 +141,14 @@ impl SkillLoader {
             }
             lines.push(line);
         }
-        
+
         lines.join("\n")
     }
-    
+
     /// Layer 2: full skill body returned in tool_result
     pub fn get_content(&self, name: &str) -> String {
         match self.skills.get(name) {
-            Some(skill) => format!(
-                "<skill name=\"{}\">\n{}\n</skill>",
-                name, skill.body
-            ),
+            Some(skill) => format!("<skill name=\"{}\">\n{}\n</skill>", name, skill.body),
             None => {
                 let available: Vec<&str> = self.skills.keys().map(|k| k.as_str()).collect();
                 format!(
@@ -159,12 +159,12 @@ impl SkillLoader {
             }
         }
     }
-    
+
     /// Get list of available skill names
     pub fn list_skills(&self) -> Vec<&str> {
         self.skills.keys().map(|k| k.as_str()).collect()
     }
-    
+
     /// Check if a skill exists
     pub fn has_skill(&self, name: &str) -> bool {
         self.skills.contains_key(name)
@@ -181,9 +181,14 @@ pub struct SkillAgent {
 }
 
 impl SkillAgent {
-    pub fn new(client: AnthropicClient, workdir: String, model: String, skills_dir: String) -> Self {
+    pub fn new(
+        client: AnthropicClient,
+        workdir: String,
+        model: String,
+        skills_dir: String,
+    ) -> Self {
         let skill_loader = SkillLoader::new(&skills_dir);
-        
+
         let tools = serde_json::json!([
             {
                 "name": "bash",
@@ -243,7 +248,7 @@ impl SkillAgent {
                 }
             }
         ]);
-        
+
         Self {
             client,
             workdir,
@@ -252,7 +257,7 @@ impl SkillAgent {
             tools,
         }
     }
-    
+
     /// Dispatch a tool call
     fn dispatch_tool(&self, tool_name: &str, input: &Json) -> String {
         let workdir = Path::new(&self.workdir);
@@ -281,7 +286,7 @@ impl SkillAgent {
             _ => format!("Unknown tool: {}", tool_name),
         }
     }
-    
+
     /// Get system prompt with skill descriptions
     pub fn get_system_prompt(&self) -> String {
         format!(
@@ -292,20 +297,23 @@ impl SkillAgent {
             self.skill_loader.get_descriptions()
         )
     }
-    
+
     /// Main agent loop (async)
     pub async fn agent_loop(&self, messages: &mut Vec<Json>) {
         let system = self.get_system_prompt();
-        
+
         loop {
-            let response = self.client.create_message(
-                &self.model,
-                Some(&system),
-                messages,
-                Some(&self.tools),
-                8000,
-            ).await;
-            
+            let response = self
+                .client
+                .create_message(
+                    &self.model,
+                    Some(&system),
+                    messages,
+                    Some(&self.tools),
+                    8000,
+                )
+                .await;
+
             let response = match response {
                 Ok(r) => r,
                 Err(e) => {
@@ -313,27 +321,31 @@ impl SkillAgent {
                     return;
                 }
             };
-            
+
             messages.push(serde_json::json!({
                 "role": "assistant",
                 "content": response["content"]
             }));
-            
+
             if response["stop_reason"] != "tool_use" {
                 return;
             }
-            
+
             let mut results = Vec::new();
             if let Some(content) = response["content"].as_array() {
                 for block in content {
                     if block["type"] == "tool_use" {
                         let tool_name = block["name"].as_str().unwrap_or("");
                         let input = &block["input"];
-                        
+
                         let output = self.dispatch_tool(tool_name, input);
-                        
-                        println!("> {}: {}", tool_name, &output[..std::cmp::min(200, output.len())]);
-                        
+
+                        println!(
+                            "> {}: {}",
+                            tool_name,
+                            &output[..std::cmp::min(200, output.len())]
+                        );
+
                         results.push(serde_json::json!({
                             "type": "tool_result",
                             "tool_use_id": block["id"],
@@ -342,7 +354,7 @@ impl SkillAgent {
                     }
                 }
             }
-            
+
             messages.push(serde_json::json!({
                 "role": "user",
                 "content": results
@@ -354,107 +366,123 @@ impl SkillAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use std::env;
-    
+    use std::fs;
+
     #[test]
     fn test_skill_loader_parse_frontmatter() {
-        let text = "---\nname: test\n\ndescription: Test skill\ntags: testing\n---\nSkill body here";
+        let text =
+            "---\nname: test\n\ndescription: Test skill\ntags: testing\n---\nSkill body here";
         let (meta, body) = SkillLoader::parse_frontmatter_static(text);
-        
+
         assert_eq!(meta.name, "test");
         assert_eq!(meta.description, "Test skill");
         assert_eq!(meta.tags, "testing");
         assert_eq!(body, "Skill body here");
     }
-    
+
     #[test]
     fn test_skill_loader_no_frontmatter() {
         let text = "No frontmatter here";
         let (meta, body) = SkillLoader::parse_frontmatter_static(text);
-        
+
         assert_eq!(meta.name, "unknown");
         assert_eq!(body, "No frontmatter here");
     }
-    
+
     #[test]
     fn test_skill_loader_empty() {
         let loader = SkillLoader::new("/nonexistent");
-        
+
         assert!(loader.skills.is_empty());
         assert_eq!(loader.get_descriptions(), "(no skills available)");
     }
-    
+
     #[test]
     fn test_skill_loader_with_skills() {
         let temp_dir = env::temp_dir();
         let skills_dir = temp_dir.join("test_skills");
         let skill_dir = skills_dir.join("test_skill");
-        
+
         // Create skill directory and file
         let _ = fs::create_dir_all(&skill_dir);
         let skill_content = "---\nname: test\n\ndescription: Test skill\n---\nSkill body";
         let _ = fs::write(skill_dir.join("SKILL.md"), skill_content);
-        
+
         let loader = SkillLoader::new(skills_dir.to_str().unwrap());
-        
+
         assert_eq!(loader.list_skills(), vec!["test"]);
         assert!(loader.has_skill("test"));
         assert!(!loader.has_skill("nonexistent"));
-        
+
         let descriptions = loader.get_descriptions();
         assert!(descriptions.contains("test: Test skill"));
-        
+
         let content = loader.get_content("test");
         assert!(content.contains("<skill name=\"test\">"));
         assert!(content.contains("Skill body"));
-        
+
         let unknown = loader.get_content("unknown");
         assert!(unknown.contains("Error: Unknown skill"));
-        
+
         // Cleanup
         let _ = fs::remove_dir_all(skills_dir);
     }
-    
+
     #[test]
     fn test_skill_agent_creation() {
         let client = AnthropicClient::new("test", "https://api.anthropic.com");
-        let agent = SkillAgent::new(client, "/tmp".to_string(), "test-model".to_string(), "/nonexistent".to_string());
-        
+        let agent = SkillAgent::new(
+            client,
+            "/tmp".to_string(),
+            "test-model".to_string(),
+            "/nonexistent".to_string(),
+        );
+
         assert_eq!(agent.workdir, "/tmp");
         assert_eq!(agent.model, "test-model");
-        
+
         // Verify tools
         let tools = agent.tools.as_array().unwrap();
         assert_eq!(tools.len(), 5);
         assert_eq!(tools[4]["name"], "load_skill");
     }
-    
+
     #[test]
     fn test_skill_agent_dispatch() {
         let client = AnthropicClient::new("test", "https://api.anthropic.com");
-        let agent = SkillAgent::new(client, "/tmp".to_string(), "test-model".to_string(), "/nonexistent".to_string());
-        
+        let agent = SkillAgent::new(
+            client,
+            "/tmp".to_string(),
+            "test-model".to_string(),
+            "/nonexistent".to_string(),
+        );
+
         // Test bash tool
         let input = serde_json::json!({"command": "echo hello"});
         let result = agent.dispatch_tool("bash", &input);
         assert!(result.contains("hello"));
-        
+
         // Test load_skill (nonexistent)
         let input = serde_json::json!({"name": "nonexistent"});
         let result = agent.dispatch_tool("load_skill", &input);
         assert!(result.contains("Error: Unknown skill"));
-        
+
         // Test unknown tool
         let result = agent.dispatch_tool("unknown", &serde_json::json!({}));
         assert!(result.contains("Unknown tool"));
     }
-    
+
     #[test]
     fn test_skill_agent_system_prompt() {
         let client = AnthropicClient::new("test", "https://api.anthropic.com");
-        let agent = SkillAgent::new(client, "/tmp".to_string(), "test-model".to_string(), "/nonexistent".to_string());
-        
+        let agent = SkillAgent::new(
+            client,
+            "/tmp".to_string(),
+            "test-model".to_string(),
+            "/nonexistent".to_string(),
+        );
+
         let system = agent.get_system_prompt();
         assert!(system.contains("coding agent at /tmp"));
         assert!(system.contains("load_skill"));

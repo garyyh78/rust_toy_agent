@@ -79,7 +79,7 @@ impl ContextCompactor {
                 }
             }
         ]);
-        
+
         Self {
             client,
             workdir: workdir.clone(),
@@ -90,20 +90,21 @@ impl ContextCompactor {
             tools,
         }
     }
-    
+
     /// Rough token count: ~4 chars per token
     pub fn estimate_tokens(messages: &[Json]) -> usize {
-        let total_chars: usize = messages.iter()
+        let total_chars: usize = messages
+            .iter()
             .map(|m| serde_json::to_string(m).unwrap_or_default().len())
             .sum();
         total_chars / 4
     }
-    
+
     /// Layer 1: micro_compact - replace old tool results with placeholders
     pub fn micro_compact(&self, messages: &mut Vec<Json>) {
         // Collect tool results with their indices
         let mut tool_results: Vec<(usize, usize, Json)> = Vec::new();
-        
+
         for (msg_idx, msg) in messages.iter().enumerate() {
             if msg["role"] == "user" {
                 if let Some(content) = msg["content"].as_array() {
@@ -115,11 +116,11 @@ impl ContextCompactor {
                 }
             }
         }
-        
+
         if tool_results.len() <= self.keep_recent {
             return;
         }
-        
+
         // Build tool name map from assistant messages
         let mut tool_name_map: HashMap<String, String> = HashMap::new();
         for msg in messages.iter() {
@@ -127,10 +128,9 @@ impl ContextCompactor {
                 if let Some(content) = msg["content"].as_array() {
                     for block in content {
                         if block["type"] == "tool_use" {
-                            if let (Some(id), Some(name)) = (
-                                block["id"].as_str(),
-                                block["name"].as_str(),
-                            ) {
+                            if let (Some(id), Some(name)) =
+                                (block["id"].as_str(), block["name"].as_str())
+                            {
                                 tool_name_map.insert(id.to_string(), name.to_string());
                             }
                         }
@@ -138,7 +138,7 @@ impl ContextCompactor {
                 }
             }
         }
-        
+
         // Clear old results (keep last keep_recent)
         let to_clear = &tool_results[..tool_results.len() - self.keep_recent];
         for (msg_idx, part_idx, _) in to_clear {
@@ -148,10 +148,12 @@ impl ContextCompactor {
                         if let Some(content_str) = result["content"].as_str() {
                             if content_str.len() > 100 {
                                 let tool_id = result["tool_use_id"].as_str().unwrap_or("");
-                                let tool_name = tool_name_map.get(tool_id)
+                                let tool_name = tool_name_map
+                                    .get(tool_id)
                                     .map(|s| s.as_str())
                                     .unwrap_or("unknown");
-                                result["content"] = Json::String(format!("[Previous: used {}]", tool_name));
+                                result["content"] =
+                                    Json::String(format!("[Previous: used {}]", tool_name));
                             }
                         }
                     }
@@ -159,7 +161,7 @@ impl ContextCompactor {
             }
         }
     }
-    
+
     /// Layer 2: auto_compact - save transcript, summarize, replace messages (async)
     pub async fn auto_compact(&self, messages: &[Json]) -> Vec<Json> {
         // Save full transcript to disk
@@ -169,7 +171,7 @@ impl ContextCompactor {
             .unwrap()
             .as_secs();
         let transcript_path = format!("{}/transcript_{}.jsonl", self.transcript_dir, timestamp);
-        
+
         if let Ok(mut file) = std::fs::File::create(&transcript_path) {
             for msg in messages {
                 if let Ok(json) = serde_json::to_string(msg) {
@@ -178,18 +180,17 @@ impl ContextCompactor {
                 }
             }
         }
-        
+
         println!("[transcript saved: {}]", transcript_path);
-        
+
         // Prepare conversation for summarization
-        let conversation_text = serde_json::to_string(messages)
-            .unwrap_or_default();
+        let conversation_text = serde_json::to_string(messages).unwrap_or_default();
         let truncated = if conversation_text.len() > 80000 {
             &conversation_text[..80000]
         } else {
             &conversation_text
         };
-        
+
         // Call LLM to summarize
         let summary_messages = vec![serde_json::json!({
             "role": "user",
@@ -200,26 +201,28 @@ impl ContextCompactor {
                 truncated
             )
         })];
-        
-        let response = self.client.create_message(
-            &self.model,
-            None,  // no system prompt for summarization
-            &summary_messages,
-            None,  // no tools for summarization
-            2000,
-        ).await;
-        
+
+        let response = self
+            .client
+            .create_message(
+                &self.model,
+                None, // no system prompt for summarization
+                &summary_messages,
+                None, // no tools for summarization
+                2000,
+            )
+            .await;
+
         let summary = match response {
-            Ok(r) => {
-                r["content"].as_array()
-                    .and_then(|arr| arr.first())
-                    .and_then(|block| block["text"].as_str())
-                    .unwrap_or("(no summary)")
-                    .to_string()
-            }
+            Ok(r) => r["content"]
+                .as_array()
+                .and_then(|arr| arr.first())
+                .and_then(|block| block["text"].as_str())
+                .unwrap_or("(no summary)")
+                .to_string(),
             Err(_) => "(summarization failed)".to_string(),
         };
-        
+
         // Replace all messages with compressed summary
         vec![
             serde_json::json!({
@@ -232,7 +235,7 @@ impl ContextCompactor {
             }),
         ]
     }
-    
+
     /// Dispatch a tool call
     fn dispatch_tool(&self, tool_name: &str, input: &Json) -> String {
         let workdir = Path::new(&self.workdir);
@@ -258,29 +261,35 @@ impl ContextCompactor {
             _ => format!("Unknown tool: {}", tool_name),
         }
     }
-    
+
     /// Main agent loop with context compression (async)
     pub async fn agent_loop(&self, messages: &mut Vec<Json>) {
-        let system = format!("You are a coding agent at {}. Use tools to solve tasks.", self.workdir);
-        
+        let system = format!(
+            "You are a coding agent at {}. Use tools to solve tasks.",
+            self.workdir
+        );
+
         loop {
             // Layer 1: micro_compact before each LLM call
             self.micro_compact(messages);
-            
+
             // Layer 2: auto_compact if token estimate exceeds threshold
             if Self::estimate_tokens(messages) > self.threshold {
                 println!("[auto_compact triggered]");
                 *messages = self.auto_compact(messages).await;
             }
-            
-            let response = self.client.create_message(
-                &self.model,
-                Some(&system),
-                messages,
-                Some(&self.tools),
-                8000,
-            ).await;
-            
+
+            let response = self
+                .client
+                .create_message(
+                    &self.model,
+                    Some(&system),
+                    messages,
+                    Some(&self.tools),
+                    8000,
+                )
+                .await;
+
             let response = match response {
                 Ok(r) => r,
                 Err(e) => {
@@ -288,34 +297,38 @@ impl ContextCompactor {
                     return;
                 }
             };
-            
+
             messages.push(serde_json::json!({
                 "role": "assistant",
                 "content": response["content"]
             }));
-            
+
             if response["stop_reason"] != "tool_use" {
                 return;
             }
-            
+
             let mut results = Vec::new();
             let mut manual_compact = false;
-            
+
             if let Some(content) = response["content"].as_array() {
                 for block in content {
                     if block["type"] == "tool_use" {
                         let tool_name = block["name"].as_str().unwrap_or("");
                         let input = &block["input"];
-                        
+
                         let output = if tool_name == "compact" {
                             manual_compact = true;
                             "Compressing...".to_string()
                         } else {
                             self.dispatch_tool(tool_name, input)
                         };
-                        
-                        println!("> {}: {}", tool_name, &output[..std::cmp::min(200, output.len())]);
-                        
+
+                        println!(
+                            "> {}: {}",
+                            tool_name,
+                            &output[..std::cmp::min(200, output.len())]
+                        );
+
                         results.push(serde_json::json!({
                             "type": "tool_result",
                             "tool_use_id": block["id"],
@@ -324,12 +337,12 @@ impl ContextCompactor {
                     }
                 }
             }
-            
+
             messages.push(serde_json::json!({
                 "role": "user",
                 "content": results
             }));
-            
+
             // Layer 3: manual compact triggered by the compact tool
             if manual_compact {
                 println!("[manual compact]");
@@ -342,21 +355,19 @@ impl ContextCompactor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_estimate_tokens() {
-        let messages = vec![
-            serde_json::json!({"role": "user", "content": "test message"}),
-        ];
+        let messages = vec![serde_json::json!({"role": "user", "content": "test message"})];
         let tokens = ContextCompactor::estimate_tokens(&messages);
         assert!(tokens > 0);
     }
-    
+
     #[test]
     fn test_micro_compact() {
         let client = AnthropicClient::new("test", "https://api.anthropic.com");
         let compactor = ContextCompactor::new(client, "/tmp".to_string(), "test".to_string());
-        
+
         // Create messages with 4 tool results (more than keep_recent=3)
         let mut messages = vec![
             serde_json::json!({
@@ -428,36 +439,42 @@ mod tests {
                 }]
             }),
         ];
-        
+
         compactor.micro_compact(&mut messages);
-        
+
         // Check that old tool results (tool_1, tool_2, tool_3) were compressed
         // tool_4 should NOT be compressed (it's in the last 3)
         if let Some(user_msg) = messages.get(1) {
             if let Some(content) = user_msg["content"].as_array() {
                 if let Some(result) = content.first() {
                     let content_str = result["content"].as_str().unwrap_or("");
-                    assert!(content_str.contains("[Previous: used bash]"), "tool_1 should be compressed");
+                    assert!(
+                        content_str.contains("[Previous: used bash]"),
+                        "tool_1 should be compressed"
+                    );
                 }
             }
         }
-        
+
         // tool_4 should NOT be compressed
         if let Some(user_msg) = messages.get(7) {
             if let Some(content) = user_msg["content"].as_array() {
                 if let Some(result) = content.first() {
                     let content_str = result["content"].as_str().unwrap_or("");
-                    assert!(!content_str.contains("[Previous:"), "tool_4 should NOT be compressed");
+                    assert!(
+                        !content_str.contains("[Previous:"),
+                        "tool_4 should NOT be compressed"
+                    );
                 }
             }
         }
     }
-    
+
     #[test]
     fn test_micro_compact_no_compress_recent() {
         let client = AnthropicClient::new("test", "https://api.anthropic.com");
         let compactor = ContextCompactor::new(client, "/tmp".to_string(), "test".to_string());
-        
+
         let mut messages = vec![
             serde_json::json!({
                 "role": "assistant",
@@ -477,43 +494,43 @@ mod tests {
                 }]
             }),
         ];
-        
+
         let original = messages.clone();
         compactor.micro_compact(&mut messages);
-        
+
         // Messages should be unchanged (only 1 tool result, less than keep_recent)
         assert_eq!(messages, original);
     }
-    
+
     #[test]
     fn test_dispatch_tool() {
         let client = AnthropicClient::new("test", "https://api.anthropic.com");
         let compactor = ContextCompactor::new(client, "/tmp".to_string(), "test".to_string());
-        
+
         // Test bash tool
         let input = serde_json::json!({"command": "echo hello"});
         let result = compactor.dispatch_tool("bash", &input);
         assert!(result.contains("hello"));
-        
+
         // Test compact tool
         let result = compactor.dispatch_tool("compact", &serde_json::json!({}));
         assert!(result.contains("Manual compression"));
-        
+
         // Test unknown tool
         let result = compactor.dispatch_tool("unknown", &serde_json::json!({}));
         assert!(result.contains("Unknown tool"));
     }
-    
+
     #[test]
     fn test_context_compactor_creation() {
         let client = AnthropicClient::new("test", "https://api.anthropic.com");
         let compactor = ContextCompactor::new(client, "/tmp".to_string(), "test-model".to_string());
-        
+
         assert_eq!(compactor.workdir, "/tmp");
         assert_eq!(compactor.model, "test-model");
         assert_eq!(compactor.threshold, 50000);
         assert_eq!(compactor.keep_recent, 3);
-        
+
         // Verify tools
         let tools = compactor.tools.as_array().unwrap();
         assert_eq!(tools.len(), 5);

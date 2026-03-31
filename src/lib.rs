@@ -1,4 +1,6 @@
 pub mod agent_loop;
+pub mod agent_teams;
+pub mod autonomous_agents;
 pub mod background_tasks;
 pub mod client;
 pub mod context_compact;
@@ -8,5 +10,7 @@ pub mod logger;
 pub mod skill_loading;
 pub mod subagent;
 pub mod task_system;
+pub mod team_protocols;
 pub mod todo_manager;
 pub mod tools;
+pub mod worktree;

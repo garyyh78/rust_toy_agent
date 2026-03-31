@@ -266,8 +266,7 @@ pub async fn agent_loop(
             logger.log_step("⚠", "Injecting nag reminder into tool_result");
             if let Some(last) = results.last_mut() {
                 if let Some(content) = last["content"].as_str() {
-                    let updated =
-                        format!("{content}\n\n<reminder>Update your todos.</reminder>");
+                    let updated = format!("{content}\n\n<reminder>Update your todos.</reminder>");
                     last["content"] = json!(updated);
                 }
             }
@@ -564,7 +563,10 @@ Prefer tools over prose.",
         // First result is unchanged
         assert_eq!(results[0]["content"], "output a");
         // Last result has the reminder
-        assert!(results[1]["content"].as_str().unwrap().contains("<reminder>"));
+        assert!(results[1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("<reminder>"));
     }
 
     // -- API error message extraction tests --

@@ -1,6 +1,6 @@
 # Rust Toy Agent
 
-A minimal AI coding agent in Rust. It talks to the Anthropic API (or any compatible endpoint like DeepSeek), executes tools in a loop, and tracks multi-step tasks with a built-in todo system. Now includes advanced agent patterns: subagents, skill loading, and context compression.
+A minimal AI coding agent in Rust. It talks to the Anthropic API (or any compatible endpoint like DeepSeek), executes tools in a loop, and tracks multi-step tasks with a built-in todo system. Now includes advanced agent patterns: subagents, skill loading, context compression, agent teams, team protocols, autonomous agents, and git worktree isolation.
 
 ## How It Works
 
@@ -29,17 +29,24 @@ User types a prompt
 
 ```
 src/
-├── main.rs             # Binary entry point (REPL)
-├── lib.rs              # Library root (exports 9 modules)
-├── client.rs           # AnthropicClient: API wrapper
-├── logger.rs           # SessionLogger: stderr + file logging
-├── help_utils.rs       # Path sandboxing + tool runners
-├── todo_manager.rs     # TodoManager: task tracking
-├── tools.rs            # TOOLS schema + dispatch_tools router
-├── agent_loop.rs       # Core loop, validation, truncation
-├── subagent.rs         # Subagent system: spawn child agents with fresh context
-├── skill_loading.rs    # Two-layer skill injection: metadata + on-demand loading
-└── context_compact.rs  # Three-layer context compression pipeline
+├── main.rs                # Binary entry point (REPL)
+├── lib.rs                 # Library root (exports 13 modules)
+├── client.rs              # AnthropicClient: API wrapper
+├── logger.rs              # SessionLogger: stderr + file logging
+├── help_utils.rs          # Path sandboxing + tool runners
+├── todo_manager.rs        # TodoManager: task tracking
+├── tools.rs               # TOOLS schema + dispatch_tools router
+├── agent_loop.rs          # Core loop, validation, truncation
+├── subagent.rs            # Subagent system: spawn child agents with fresh context
+├── skill_loading.rs       # Two-layer skill injection: metadata + on-demand loading
+├── context_compact.rs     # Three-layer context compression pipeline
+├── agent_teams.rs         # Agent teams with persistent named teammates + message bus
+├── team_protocols.rs      # Shutdown and plan approval protocols with request tracking
+├── autonomous_agents.rs   # Idle polling, auto task claiming, identity re-injection
+├── worktree.rs            # Git worktree management with task isolation
+├── background_tasks.rs    # Background task execution with notification queue
+├── task_system.rs         # Persistent task management with dependency graph
+└── e2e_test.rs            # End-to-end test runner with result tracking
 ```
 
 ### Module Responsibilities
@@ -55,6 +62,10 @@ src/
 | `subagent` | Spawn child agents with fresh context | `Subagent::new()`, `run_subagent()`, `agent_loop()` |
 | `skill_loading` | Two-layer skill injection: metadata + on-demand loading | `SkillLoader::new()`, `get_descriptions()`, `get_content()` |
 | `context_compact` | Three-layer context compression pipeline | `ContextCompactor::new()`, `micro_compact()`, `auto_compact()`, `compact()` |
+| `agent_teams` | Persistent named teammates with thread-safe message bus | `MessageBus::new()`, `send()`, `read_inbox()`, `broadcast()`, `TeammateManager::new()`, `spawn()`, `list_all()` |
+| `team_protocols` | Shutdown and plan approval with DashMap request tracking | `ProtocolTracker::new()`, `create_shutdown_request()`, `respond_shutdown()`, `submit_plan()`, `review_plan()` |
+| `autonomous_agents` | Idle polling, auto task claiming, filesystem watching | `scan_unclaimed_tasks()`, `claim_task()`, `watch_tasks_dir()`, `poll_for_work()`, `make_identity_block()` |
+| `worktree` | Git worktree management with task binding and event bus | `WorktreeManager::new()`, `create()`, `remove()`, `keep()`, `run()`, `EventBus`, `TaskBinding` |
 | `e2e_test` | End-to-end test runner with result tracking | `run_test()`, `load_test_case()`, `save_test_result()` |
 
 ### Tools
@@ -167,6 +178,10 @@ Results are auto-committed to git after each test run.
 | `subagent` | 3 | Subagent creation, tool dispatch, child tools |
 | `skill_loading` | 7 | Frontmatter parsing, skill loader, skill agent, system prompt |
 | `context_compact` | 5 | Token estimation, micro_compact, tool dispatch, compactor creation |
+| `agent_teams` | 18 | Message bus, send/read/broadcast, teammate manager, spawn, persistence |
+| `team_protocols` | 17 | Shutdown protocol, plan approval, concurrent tracking, serialization |
+| `autonomous_agents` | 16 | Task scanning, claiming, identity blocks, polling, filesystem watching |
+| `worktree` | 21 | Event bus, index, task binding, name validation, worktree manager |
 | `e2e_test` | 3 | Test runner, test result tracking with tokens and steps |
 
 ## End-to-End Tests

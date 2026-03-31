@@ -37,10 +37,8 @@ pub struct TestResult {
 }
 
 pub fn get_git_commit() -> String {
-    let output = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .output();
-    
+    let output = Command::new("git").args(["rev-parse", "HEAD"]).output();
+
     match output {
         Ok(o) => {
             if o.status.success() {
@@ -96,7 +94,8 @@ Prefer tools over prose.",
     );
 
     let tools: Json = serde_json::from_str(TOOLS).unwrap();
-    let mut history: Messages = vec![serde_json::json!({"role": "user", "content": test_case.prompt})];
+    let mut history: Messages =
+        vec![serde_json::json!({"role": "user", "content": test_case.prompt})];
 
     let (total_input_tokens, total_output_tokens, steps) = agent_loop(
         client,
@@ -137,11 +136,11 @@ Prefer tools over prose.",
 }
 
 pub fn load_test_case(path: &Path) -> Result<TestCase, String> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read test file: {}", e))?;
-    
-    let json: Json = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse test JSON: {}", e))?;
+    let content =
+        std::fs::read_to_string(path).map_err(|e| format!("Failed to read test file: {}", e))?;
+
+    let json: Json =
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse test JSON: {}", e))?;
 
     let name = json["name"]
         .as_str()
@@ -155,9 +154,7 @@ pub fn load_test_case(path: &Path) -> Result<TestCase, String> {
         .as_str()
         .ok_or("Missing 'expected_output' field")?
         .to_string();
-    let language = json["language"]
-        .as_str()
-        .map(String::from);
+    let language = json["language"].as_str().map(String::from);
 
     Ok(TestCase {
         name,
@@ -177,20 +174,23 @@ pub fn print_test_result(result: &TestResult) {
     println!("═══════════════════════════════════════════════════════════════");
     println!("  Test: {}", result.name);
     println!("═══════════════════════════════════════════════════════════════");
-    
+
     if result.passed {
         println!("  ✓ PASSED");
     } else {
         println!("  ✗ FAILED");
     }
-    
+
     println!();
     println!("  Model: {}", result.model);
     println!("  Commit: {}", result.commit);
     println!("  Time: {} ms", result.total_time_ms);
-    println!("  Tokens: {} ({} in / {} out)", result.total_tokens, result.input_tokens, result.output_tokens);
+    println!(
+        "  Tokens: {} ({} in / {} out)",
+        result.total_tokens, result.input_tokens, result.output_tokens
+    );
     println!();
-    
+
     if !result.passed {
         println!("  Expected output:");
         println!("  ────────────────────────────────────────────────────────────");
@@ -205,12 +205,12 @@ pub fn print_test_result(result: &TestResult) {
 
 pub fn save_test_result(result: &TestResult, results_dir: &Path) -> std::io::Result<()> {
     fs::create_dir_all(results_dir)?;
-    
+
     let filename = format!("{}_{}.json", result.name, result.test_time);
     let filepath = results_dir.join(&filename);
-    
+
     let json = serde_json::to_string_pretty(result)?;
     fs::write(filepath, json)?;
-    
+
     Ok(())
 }
