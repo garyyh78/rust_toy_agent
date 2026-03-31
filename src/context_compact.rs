@@ -5,6 +5,21 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Token threshold for triggering micro-compaction.
+const COMPACT_TOKEN_THRESHOLD: usize = 50_000;
+
+/// Truncate tool result previews to this length.
+const TOOL_RESULT_PREVIEW_LEN: usize = 100;
+
+/// Maximum conversation size before forced truncation.
+const MAX_CONVERSATION_SIZE: usize = 80_000;
+
+/// Max tokens for the summarization subagent call.
+const SUMMARIZE_MAX_TOKENS: u32 = 2_000;
+
+/// Max tokens for the compactor's context compaction call.
+const COMPACTOR_MAX_TOKENS: u32 = 8_000;
+
 /// Three-layer compression pipeline for context management.
 /// Layer 1: micro_compact - replace old tool results with placeholders
 /// Layer 2: auto_compact - save transcript, summarize, replace messages
@@ -84,7 +99,7 @@ impl ContextCompactor {
             client,
             workdir: workdir.clone(),
             model,
-            threshold: 50000,
+            threshold: COMPACT_TOKEN_THRESHOLD,
             keep_recent: 3,
             transcript_dir: format!("{}/.transcripts", workdir),
             tools,
@@ -146,7 +161,7 @@ impl ContextCompactor {
                 if let Some(content) = msg["content"].as_array_mut() {
                     if let Some(result) = content.get_mut(*part_idx) {
                         if let Some(content_str) = result["content"].as_str() {
-                            if content_str.len() > 100 {
+                            if content_str.len() > TOOL_RESULT_PREVIEW_LEN {
                                 let tool_id = result["tool_use_id"].as_str().unwrap_or("");
                                 let tool_name = tool_name_map
                                     .get(tool_id)
@@ -185,8 +200,8 @@ impl ContextCompactor {
 
         // Prepare conversation for summarization
         let conversation_text = serde_json::to_string(messages).unwrap_or_default();
-        let truncated = if conversation_text.len() > 80000 {
-            &conversation_text[..80000]
+        let truncated = if conversation_text.len() > MAX_CONVERSATION_SIZE {
+            &conversation_text[..MAX_CONVERSATION_SIZE]
         } else {
             &conversation_text
         };
@@ -209,7 +224,7 @@ impl ContextCompactor {
                 None, // no system prompt for summarization
                 &summary_messages,
                 None, // no tools for summarization
-                2000,
+                SUMMARIZE_MAX_TOKENS,
             )
             .await;
 
@@ -286,7 +301,7 @@ impl ContextCompactor {
                     Some(&system),
                     messages,
                     Some(&self.tools),
-                    8000,
+                    COMPACTOR_MAX_TOKENS,
                 )
                 .await;
 

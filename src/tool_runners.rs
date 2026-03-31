@@ -34,6 +34,9 @@
 use std::path::{Component, Path, PathBuf};
 use std::process::Command as Proc;
 
+/// Maximum output size for tool results (50KB).
+const MAX_OUTPUT_SIZE: usize = 50_000;
+
 // -- Path helpers --
 // Normalize resolves "." and ".." without touching the filesystem.
 // safe_path joins a user-supplied path to the workdir and rejects
@@ -94,8 +97,8 @@ pub fn run_bash(command: &str, workdir: &Path) -> String {
             let text = text.trim().to_string();
             if text.is_empty() {
                 "(no output)".to_string()
-            } else if text.len() > 50000 {
-                text[..50000].to_string()
+            } else if text.len() > MAX_OUTPUT_SIZE {
+                text[..MAX_OUTPUT_SIZE].to_string()
             } else {
                 text
             }
@@ -119,8 +122,8 @@ pub fn run_read(path: &str, limit: Option<usize>, workdir: &Path) -> String {
                     }
                     _ => lines.join("\n"),
                 };
-                if result.len() > 50000 {
-                    result[..50000].to_string()
+                if result.len() > MAX_OUTPUT_SIZE {
+                    result[..MAX_OUTPUT_SIZE].to_string()
                 } else {
                     result
                 }

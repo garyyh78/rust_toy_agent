@@ -11,6 +11,18 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+/// Maximum output size for background task results (50KB).
+const MAX_BG_OUTPUT_SIZE: usize = 50_000;
+
+/// Maximum length for notification result text.
+const MAX_NOTIFICATION_SIZE: usize = 500;
+
+/// Maximum length for command display in output.
+const MAX_COMMAND_DISPLAY: usize = 80;
+
+/// Maximum length for status check command display.
+const MAX_STATUS_COMMAND_DISPLAY: usize = 60;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackgroundTask {
     pub task_id: String,
@@ -91,8 +103,8 @@ impl BackgroundManager {
                 })
                 .unwrap_or_else(|e| format!("Error: {}", e));
 
-            let output_truncated = if output.len() > 50000 {
-                output[..50000].to_string()
+            let output_truncated = if output.len() > MAX_BG_OUTPUT_SIZE {
+                output[..MAX_BG_OUTPUT_SIZE].to_string()
             } else {
                 output.clone()
             };
@@ -110,9 +122,10 @@ impl BackgroundManager {
                 queue.push(Notification {
                     task_id: task_id_for_thread,
                     status,
-                    command: command_owned[..command_owned.len().min(80)].to_string(),
-                    result: if output_truncated.len() > 500 {
-                        output_truncated[..500].to_string()
+                    command: command_owned[..command_owned.len().min(MAX_COMMAND_DISPLAY)]
+                        .to_string(),
+                    result: if output_truncated.len() > MAX_NOTIFICATION_SIZE {
+                        output_truncated[..MAX_NOTIFICATION_SIZE].to_string()
                     } else {
                         output_truncated
                     },
@@ -123,7 +136,7 @@ impl BackgroundManager {
         format!(
             "Background task {} started: {}",
             task_id,
-            &command[..command.len().min(80)]
+            &command[..command.len().min(MAX_COMMAND_DISPLAY)]
         )
     }
 
@@ -136,7 +149,7 @@ impl BackgroundManager {
                 return format!(
                     "[{}] {}\n{}",
                     task.status,
-                    &task.command[..task.command.len().min(60)],
+                    &task.command[..task.command.len().min(MAX_STATUS_COMMAND_DISPLAY)],
                     result
                 );
             } else {
@@ -155,7 +168,7 @@ impl BackgroundManager {
                     "{}: [{}] {}",
                     t.task_id,
                     t.status,
-                    &t.command[..t.command.len().min(60)]
+                    &t.command[..t.command.len().min(MAX_STATUS_COMMAND_DISPLAY)]
                 )
             })
             .collect();
