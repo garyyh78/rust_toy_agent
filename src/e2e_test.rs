@@ -1,5 +1,5 @@
 use crate::agent_loop::{agent_loop, Messages};
-use crate::client::AnthropicClient;
+use crate::llm_client::AnthropicClient;
 use crate::logger::SessionLogger;
 use crate::todo_manager::TodoManager;
 use crate::tools::TOOLS;

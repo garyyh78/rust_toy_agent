@@ -31,9 +31,9 @@ User types a prompt
 src/
 ├── main.rs                # Binary entry point (REPL)
 ├── lib.rs                 # Library root (exports 13 modules)
-├── client.rs              # AnthropicClient: API wrapper
+├── llm_client.rs          # AnthropicClient: API wrapper
 ├── logger.rs              # SessionLogger: stderr + file logging
-├── help_utils.rs          # Path sandboxing + tool runners
+├── tool_runners.rs        # Path sandboxing + tool runners
 ├── todo_manager.rs        # TodoManager: task tracking
 ├── tools.rs               # TOOLS schema + dispatch_tools router
 ├── agent_loop.rs          # Core loop, validation, truncation
@@ -53,9 +53,9 @@ src/
 
 | Module | What it does | Key exports |
 |--------|-------------|-------------|
-| `client` | HTTP client for Anthropic Messages API | `AnthropicClient::from_env()`, `create_message()`, `send_body()` |
+| `llm_client` | HTTP client for Anthropic Messages API | `AnthropicClient::from_env()`, `create_message()`, `send_body()` |
 | `logger` | Dual-output logging (stderr with colors + plain text file) | `SessionLogger::new(path)`, `log_api_request()`, `log_api_response()` |
-| `help_utils` | Filesystem sandbox and tool runners | `safe_path()`, `run_bash()`, `run_read()`, `run_write()`, `run_edit()` |
+| `tool_runners` | Filesystem sandbox and tool runners | `safe_path()`, `run_bash()`, `run_read()`, `run_write()`, `run_edit()` |
 | `todo_manager` | Task tracking with validation (max 32 items) | `TodoManager::new()`, `update()`, `render()`, `items()` |
 | `tools` | Tool JSON schema and dispatch router | `TOOLS` const, `dispatch_tools()` |
 | `agent_loop` | Core agent loop with validation, truncation (MAX_TOKENS) | `agent_loop()`, `validate_tool_pairing()`, `truncate_messages()`, `MAX_TOKENS` |
@@ -169,8 +169,8 @@ Results are auto-committed to git after each test run.
 
 | Module | Tests | What's covered |
 |--------|-------|----------------|
-| `help_utils` | 13 | Path normalization, safe_path escapes, bash blocking, file CRUD |
-| `client` | 10 | Request body building, API error handling (401, 400, connection failure) |
+| `tool_runners` | 13 | Path normalization, safe_path escapes, bash blocking, file CRUD |
+| `llm_client` | 10 | Request body building, API error handling (401, 400, connection failure) |
 | `todo_manager` | 16 | Validation, render format, update/replacement, boundary conditions |
 | `tools` | 8 | TOOLS schema, dispatch routing |
 | `agent_loop` | 22 | Nag reminder, tool pairing, message truncation, corrupted history, API error extraction |

@@ -10,7 +10,7 @@
 //!     └── todo_manager ── TodoManager
 
 use rust_toy_agent::agent_loop::{agent_loop, Messages};
-use rust_toy_agent::client::AnthropicClient;
+use rust_toy_agent::llm_client::AnthropicClient;
 use rust_toy_agent::e2e_test::{load_test_case, print_test_result, run_test, save_test_result};
 use rust_toy_agent::logger::SessionLogger;
 use rust_toy_agent::todo_manager::TodoManager;

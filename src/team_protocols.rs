@@ -80,6 +80,7 @@ impl ProtocolTracker {
 
     /// Create a shutdown request and return the request_id.
     pub fn create_shutdown_request(&self, target: &str) -> String {
+        // Generate a short UUID as correlation key between request and response
         let request_id = Uuid::new_v4().to_string()[..8].to_string();
         self.shutdown_requests.insert(
             request_id.clone(),
@@ -94,10 +95,12 @@ impl ProtocolTracker {
 
     /// Respond to a shutdown request. Returns the updated status.
     pub fn respond_shutdown(&self, request_id: &str, approve: bool) -> Result<String, String> {
+        // DashMap::get_mut gives a write guard; held until scope exits
         let mut req = self
             .shutdown_requests
             .get_mut(request_id)
             .ok_or_else(|| format!("Unknown shutdown request_id '{request_id}'"))?;
+        // Transition from pending to approved/rejected
         req.status = if approve {
             RequestStatus::Approved
         } else {
@@ -187,6 +190,10 @@ impl Default for ProtocolTracker {
         Self::new()
     }
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
 
 #[cfg(test)]
 mod tests {

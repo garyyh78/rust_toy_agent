@@ -1,9 +1,9 @@
-//! help_utils.rs - Path helpers and file/shell tool runners
+//! tool_runners.rs - Path helpers and file/shell tool runners
 //!
 //! Everything that touches the filesystem or runs shell commands lives here.
 //!
 //! ┌──────────────────────────────────────────────────────────┐
-//! │                    help_utils                            │
+//! │                    tool_runners                          │
 //! ├──────────────────────────────────────────────────────────┤
 //! │                                                          │
 //! │  Path helpers:                                           │

@@ -1,17 +1,17 @@
 //! tools.rs - Tool definitions and dispatch
 //!
 //! TOOLS constant (JSON schema) and the dispatch_tools router.
-//! Path/file operations come from help_utils, todo state from todo_manager.
+//! Path/file operations come from tool_runners, todo state from todo_manager.
 //!
 //! ┌──────────────────────────────────────────────────────────────┐
 //! │                        tools.rs                              │
 //! ├──────────────────────────────────────────────────────────────┤
 //! │                                                              │
 //! │  TOOLS ── JSON schema sent to Anthropic API                  │
-//! │    ├── bash        ── run_bash()      [help_utils]           │
-//! │    ├── read_file   ── run_read()      [help_utils]           │
-//! │    ├── write_file  ── run_write()     [help_utils]           │
-//! │    ├── edit_file   ── run_edit()      [help_utils]           │
+//! │    ├── bash        ── run_bash()      [tool_runners]         │
+//! │    ├── read_file   ── run_read()      [tool_runners]         │
+//! │    ├── write_file  ── run_write()     [tool_runners]         │
+//! │    ├── edit_file   ── run_edit()      [tool_runners]         │
 //! │    └── todo        ── TodoManager.update() [todo_manager]    │
 //! │                                                              │
 //! │  dispatch_tools(name, input, workdir, todo)                  │
@@ -24,8 +24,8 @@
 //! │    └── _            ──→ None          ──→ (None,    false)   │
 //! └──────────────────────────────────────────────────────────────┘
 
-use crate::help_utils::{run_bash, run_edit, run_read, run_write};
 use crate::todo_manager::TodoManager;
+use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
 use serde_json::Value as Json;
 use std::path::Path;
 use std::sync::{Arc, Mutex};

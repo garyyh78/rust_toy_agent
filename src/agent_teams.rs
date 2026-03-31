@@ -51,7 +51,9 @@ pub struct Message {
 }
 
 impl Message {
+    /// Create a new message with an auto-generated timestamp.
     pub fn new(sender: &str, content: &str, msg_type: &str) -> Self {
+        // Use epoch seconds as a sortable timestamp
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -174,8 +176,10 @@ impl TeammateManager {
         dir.join("config.json")
     }
 
+    /// Load config from disk, falling back to defaults if file is missing or corrupt.
     fn load_config(dir: &Path) -> TeamConfig {
         let path = Self::config_path(dir);
+        // Try to read and parse; silently fall back to defaults on any error
         if path.exists() {
             if let Ok(content) = fs::read_to_string(&path) {
                 if let Ok(cfg) = serde_json::from_str::<TeamConfig>(&content) {
@@ -189,6 +193,7 @@ impl TeammateManager {
         }
     }
 
+    /// Persist the current config to disk as pretty-printed JSON.
     fn save_config(&self) -> std::io::Result<()> {
         let path = Self::config_path(&self.dir);
         let content = serde_json::to_string_pretty(&self.config)?;
@@ -197,6 +202,7 @@ impl TeammateManager {
 
     /// Add or update a teammate in the config.
     pub fn spawn(&mut self, name: &str, role: &str) -> Result<String, String> {
+        // If member already exists, only allow respawn if idle or shutdown
         if let Some(member) = self.config.members.iter_mut().find(|m| m.name == name) {
             if !["idle", "shutdown"].contains(&member.status.as_str()) {
                 return Err(format!("'{}' is currently {}", name, member.status));
@@ -204,6 +210,7 @@ impl TeammateManager {
             member.status = "working".to_string();
             member.role = role.to_string();
         } else {
+            // New member: add to config with "working" status
             self.config.members.push(TeamMember {
                 name: name.to_string(),
                 role: role.to_string(),
@@ -249,6 +256,10 @@ impl TeammateManager {
         self.config.members.iter().find(|m| m.name == name)
     }
 }
+
+// =============================================================================
+// Tests
+// =============================================================================
 
 #[cfg(test)]
 mod tests {

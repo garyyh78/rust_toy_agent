@@ -1,4 +1,4 @@
-//! client.rs - Anthropic API client
+//! llm_client.rs - Anthropic API client
 //!
 //! Wraps reqwest to talk to the Anthropic Messages API.
 //!
