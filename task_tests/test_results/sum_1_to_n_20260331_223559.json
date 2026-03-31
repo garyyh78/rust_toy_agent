@@ -1,0 +1,14 @@
+{
+  "name": "sum_1_to_n",
+  "model": "deepseek-chat",
+  "commit": "14904d7dfbd6f3ee7430d41270c8c81190886023",
+  "test_time": "20260331_223559",
+  "passed": true,
+  "steps": 12,
+  "actual_output": "The task is complete. I have created a Python program that:\n\n1. Sums all integers from 1 to 10,000 using a loop\n2. Calculates the same sum using the formula N*(N+1)/2\n3. Verifies that both results match\n4. Prints only the final verified answer: **50005000**\n\nThe program `sum_1_to_n_simple.py` contains the complete solution and outputs exactly what was requested.",
+  "expected_output": "50005000",
+  "total_time_ms": 58912,
+  "total_tokens": 8336,
+  "input_tokens": 6633,
+  "output_tokens": 1703
+}
