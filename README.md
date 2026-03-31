@@ -58,7 +58,7 @@ src/
 | `tool_runners` | Filesystem sandbox and tool runners | `safe_path()`, `run_bash()`, `run_read()`, `run_write()`, `run_edit()` |
 | `todo_manager` | Task tracking with validation (max 32 items) | `TodoManager::new()`, `update()`, `render()`, `items()` |
 | `tools` | Tool JSON schema and dispatch router | `TOOLS` const, `dispatch_tools()` |
-| `agent_loop` | Core agent loop with validation, truncation (MAX_TOKENS) | `agent_loop()`, `validate_tool_pairing()`, `truncate_messages()`, `MAX_TOKENS` |
+| `agent_loop` | Core agent loop with validation, truncation, nag reminder | `agent_loop()`, `validate_tool_pairing()`, `truncate_messages()`, `call_llm()`, `dispatch_tool_calls()` |
 | `subagent` | Spawn child agents with fresh context | `Subagent::new()`, `run_subagent()`, `agent_loop()` |
 | `skill_loading` | Two-layer skill injection: metadata + on-demand loading | `SkillLoader::new()`, `get_descriptions()`, `get_content()` |
 | `context_compact` | Three-layer context compression pipeline | `ContextCompactor::new()`, `micro_compact()`, `auto_compact()`, `compact()` |
