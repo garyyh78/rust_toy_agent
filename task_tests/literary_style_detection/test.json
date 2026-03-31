@@ -1,0 +1,6 @@
+{
+  "name": "literary_style_detection",
+  "prompt": "Do these two tasks using the bash tool:\n\n1. First, create and run a Python script that:\n   - Writes 4 neutral text files to the workspace: file1.txt, file2.txt, file3.txt, file4.txt\n   - Each file is ~200 words mimicking a different famous author's style\n   - The 4 authors are: Homer (epic epithets, invocations), Shakespeare (iambic rhythm, thee/thou), Whitman (free verse, cataloging lines, nature), Milton (blank verse, Latinate, theological)\n   - Shuffle the assignment randomly so file1.txt is NOT necessarily Homer, etc.\n   - Files must NOT contain the author's name\n   - Write the correct mapping to answers.txt as lines like: file1.txt -> Homer\n\n2. Then create and run a second Python script that:\n   - Reads each of the 4 text files\n   - Analyzes the literary style and guesses the author\n   - Reads answers.txt to check its guesses\n   - Prints the result as 4 lines: filename -> guessed_author -> correct (or wrong)\n\nPrint only the final 4 lines of the recognition results.",
+  "expected_output": "correct",
+  "language": "python"
+}
