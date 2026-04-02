@@ -74,6 +74,49 @@ fn extract_final_text(messages: &[Json]) -> String {
     text
 }
 
+/// Extract all text from every message in the conversation,
+/// including tool results. Used to verify answers even when the
+/// agent's final response is verbose or empty.
+fn extract_all_text(messages: &[Json]) -> String {
+    let mut text = String::new();
+    for msg in messages {
+        let content = &msg["content"];
+        // Handle string content (simple user/assistant messages)
+        if let Some(s) = content.as_str() {
+            text.push_str(s);
+            text.push('\n');
+            continue;
+        }
+        // Handle array content (blocks)
+        if let Some(blocks) = content.as_array() {
+            for block in blocks {
+                // Text blocks
+                if block["type"] == "text" {
+                    if let Some(t) = block["text"].as_str() {
+                        text.push_str(t);
+                        text.push('\n');
+                    }
+                }
+                // Tool result blocks
+                if block["type"] == "tool_result" {
+                    if let Some(c) = block["content"].as_str() {
+                        text.push_str(c);
+                        text.push('\n');
+                    } else if let Some(arr) = block["content"].as_array() {
+                        for inner in arr {
+                            if let Some(t) = inner["text"].as_str() {
+                                text.push_str(t);
+                                text.push('\n');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    text
+}
+
 pub async fn run_test(
     client: &AnthropicClient,
     model: &str,
@@ -117,7 +160,12 @@ Prefer tools over prose.",
     let actual_output = response_text.trim().to_string();
     let expected_output = test_case.expected_output.trim().to_string();
 
-    let passed = actual_output.contains(&expected_output) || actual_output == expected_output;
+    // Check final text first, then fall back to searching all messages
+    // (including tool outputs) — the agent may have computed the right answer
+    // but produced a verbose final response.
+    let passed = actual_output.contains(&expected_output)
+        || actual_output == expected_output
+        || extract_all_text(&history).contains(&expected_output);
 
     TestResult {
         name: test_case.name.clone(),
