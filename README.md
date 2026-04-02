@@ -193,20 +193,35 @@ The project includes E2E tests to evaluate the agent on real programming tasks. 
 | `sum_1_to_n` | Python | 50005000 |
 | `fibonacci_sum` | C++ | 2178308 |
 | `prime_sum` | TypeScript | 3682913 |
+| `literary_style_detection` | Python | "correct" |
 
 Run tests:
 
 ```bash
 # Run individual tests
-cargo e2e-sum   # sum 1 to 10000
-cargo e2e-fib   # sum first 30 Fibonacci numbers
-cargo e2e-prime # sum first 1000 primes
+cargo run --release -- --test sum_1_to_n
+cargo run --release -- --test fibonacci_sum
+cargo run --release -- --test prime_sum
+cargo run --release -- --test literary_style_detection
 
-# Run all tests sequentially
-./run_all_e2e.sh
+# Or use aliases
+cargo e2e-sum
+cargo e2e-fib
+cargo e2e-prime
 ```
 
-Test results are saved to `task_tests/test_results/` with model name, commit hash, execution time, token counts, and step count. Results are auto-committed to git after each run.
+### Latest Results (2026-04-02, deepseek-chat, commit `8c79bc7`)
+
+| Test | Status | Time (ms) | Tokens |
+|------|--------|-----------|--------|
+| `sum_1_to_n` | PASS | 85,795 | 9,519 |
+| `fibonacci_sum` | PASS | 130,229 | 19,231 |
+| `prime_sum` | FAIL* | 128,188 | 23,708 |
+| `literary_style_detection` | PASS | 189,549 | 42,004 |
+
+**3/4 passed.** \*`prime_sum` produced the correct answer (3682913) but the agent's final text response was verbose instead of printing only the number.
+
+Test results are saved to `task_tests/test_results/` with model name, commit hash, execution time, token counts, and step count.
 
 ## License
 

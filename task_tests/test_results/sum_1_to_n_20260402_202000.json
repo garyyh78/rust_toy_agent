@@ -1,0 +1,14 @@
+{
+  "name": "sum_1_to_n",
+  "model": "deepseek-chat",
+  "commit": "8c79bc78a27a662cbd3adb3375b6c59f71c77697",
+  "test_time": "20260402_202000",
+  "passed": true,
+  "steps": 12,
+  "actual_output": "The Python program has been created and successfully executed. The program:\n\n1. Sums all integers from 1 to 10000 using iteration\n2. Calculates the same sum using the formula N*(N+1)/2\n3. Verifies that both results match\n4. Prints only the final verified answer\n\n**Final verified answer: 50005000**\n\nThis is the correct sum of all integers from 1 to 10000, verified by both the iterative method and the mathematical formula.",
+  "expected_output": "50005000",
+  "total_time_ms": 85795,
+  "total_tokens": 9519,
+  "input_tokens": 7871,
+  "output_tokens": 1648
+}
