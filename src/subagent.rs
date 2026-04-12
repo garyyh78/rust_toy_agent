@@ -1,6 +1,6 @@
 use crate::llm_client::AnthropicClient;
-use crate::tools::TOOLS;
 use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
+use crate::tools::TOOLS;
 use serde_json::Value as Json;
 use std::path::Path;
 
@@ -294,7 +294,10 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert!(!names.contains(&"todo"), "child tools must not include todo");
+        assert!(
+            !names.contains(&"todo"),
+            "child tools must not include todo"
+        );
         assert!(names.contains(&"bash"));
         assert!(names.contains(&"read_file"));
         assert!(names.contains(&"write_file"));
@@ -343,7 +346,10 @@ mod tests {
             .collect();
 
         for name in &child_names {
-            assert!(parent_names.contains(name), "parent missing child tool: {name}");
+            assert!(
+                parent_names.contains(name),
+                "parent missing child tool: {name}"
+            );
         }
         assert!(parent_names.contains(&"task"));
         assert!(!parent_names.contains(&"todo"));
@@ -361,7 +367,10 @@ mod tests {
     #[test]
     fn test_dispatch_read_file() {
         let sub = test_subagent("/tmp");
-        let result = sub.dispatch_child_tool("read_file", &serde_json::json!({"path": "Cargo.toml", "limit": 5}));
+        let result = sub.dispatch_child_tool(
+            "read_file",
+            &serde_json::json!({"path": "Cargo.toml", "limit": 5}),
+        );
         assert!(!result.is_empty());
     }
 
@@ -372,10 +381,16 @@ mod tests {
 
         let filename = "rust_toy_agent_subagent_write_test.txt";
         let tmp = workdir.join(filename);
-        let result = sub.dispatch_child_tool("write_file", &serde_json::json!({"path": filename, "content": "subagent wrote this"}));
+        let result = sub.dispatch_child_tool(
+            "write_file",
+            &serde_json::json!({"path": filename, "content": "subagent wrote this"}),
+        );
         assert!(result.contains("Wrote"));
 
-        assert_eq!(std::fs::read_to_string(&tmp).unwrap(), "subagent wrote this");
+        assert_eq!(
+            std::fs::read_to_string(&tmp).unwrap(),
+            "subagent wrote this"
+        );
         let _ = std::fs::remove_file(&tmp);
     }
 
@@ -388,11 +403,14 @@ mod tests {
         let tmp = workdir.join(filename);
         let _ = std::fs::write(&tmp, "replace ME please");
 
-        let result = sub.dispatch_child_tool("edit_file", &serde_json::json!({
-            "path": filename,
-            "old_text": "ME",
-            "new_text": "YOU"
-        }));
+        let result = sub.dispatch_child_tool(
+            "edit_file",
+            &serde_json::json!({
+                "path": filename,
+                "old_text": "ME",
+                "new_text": "YOU"
+            }),
+        );
         assert!(result.contains("Edited"));
 
         assert_eq!(std::fs::read_to_string(&tmp).unwrap(), "replace YOU please");
@@ -425,7 +443,8 @@ mod tests {
     #[test]
     fn test_dispatch_write_file_missing_fields() {
         let sub = test_subagent("/tmp");
-        let result = sub.dispatch_child_tool("write_file", &serde_json::json!({"path": "/tmp/test.txt"}));
+        let result =
+            sub.dispatch_child_tool("write_file", &serde_json::json!({"path": "/tmp/test.txt"}));
         assert!(!result.is_empty());
     }
 
@@ -438,11 +457,14 @@ mod tests {
         let tmp = workdir.join(filename);
         let _ = std::fs::write(&tmp, "hello world");
 
-        let result = sub.dispatch_child_tool("edit_file", &serde_json::json!({
-            "path": filename,
-            "old_text": "missing",
-            "new_text": "replaced"
-        }));
+        let result = sub.dispatch_child_tool(
+            "edit_file",
+            &serde_json::json!({
+                "path": filename,
+                "old_text": "missing",
+                "new_text": "replaced"
+            }),
+        );
         assert!(result.contains("Text not found"));
         let _ = std::fs::remove_file(&tmp);
     }
@@ -450,7 +472,8 @@ mod tests {
     #[test]
     fn test_dispatch_bash_dangerous_blocked() {
         let sub = test_subagent("/tmp");
-        let result = sub.dispatch_child_tool("bash", &serde_json::json!({"command": "sudo rm -rf /"}));
+        let result =
+            sub.dispatch_child_tool("bash", &serde_json::json!({"command": "sudo rm -rf /"}));
         assert!(result.contains("Dangerous command blocked"));
     }
 
@@ -465,7 +488,10 @@ mod tests {
                 {"type": "text", "text": " All look correct."}
             ]
         })];
-        assert_eq!(Subagent::extract_summary(&messages), "Found 3 files. All look correct.");
+        assert_eq!(
+            Subagent::extract_summary(&messages),
+            "Found 3 files. All look correct."
+        );
     }
 
     #[test]

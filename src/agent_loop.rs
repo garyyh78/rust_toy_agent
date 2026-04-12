@@ -113,7 +113,8 @@ async fn call_llm(
 ) -> Option<Json> {
     logger.log_step("→", &format!("Calling Agent Model ({model})..."));
 
-    let body = AnthropicClient::build_request_body(model, Some(system), messages, Some(tools), MAX_TOKENS);
+    let body =
+        AnthropicClient::build_request_body(model, Some(system), messages, Some(tools), MAX_TOKENS);
     let body_len = serde_json::to_string(&body).unwrap_or_default().len();
     logger.log_info("request_size", &format!("{body_len} bytes"));
     logger.log_info("max_tokens", &MAX_TOKENS.to_string());
@@ -203,11 +204,7 @@ fn dispatch_tool_calls(
 }
 
 /// If rounds_since_todo >= 3, inject a nag reminder into the last tool_result.
-fn maybe_inject_nag(
-    results: &mut Vec<Json>,
-    rounds_since_todo: usize,
-    logger: &mut SessionLogger,
-) {
+fn maybe_inject_nag(results: &mut [Json], rounds_since_todo: usize, logger: &mut SessionLogger) {
     if rounds_since_todo >= 3 && !results.is_empty() {
         logger.log_step("⚠", "Injecting nag reminder into tool_result");
         if let Some(last) = results.last_mut() {
@@ -265,7 +262,10 @@ pub async fn agent_loop(
         let output_tokens = usage["output_tokens"].as_u64().unwrap_or(0);
         total_input_tokens += input_tokens;
         total_output_tokens += output_tokens;
-        logger.log_info("tokens", &format!("{input_tokens} in / {output_tokens} out"));
+        logger.log_info(
+            "tokens",
+            &format!("{input_tokens} in / {output_tokens} out"),
+        );
         logger.log_info("stop", &stop_reason);
         eprintln!();
 
@@ -293,7 +293,10 @@ pub async fn agent_loop(
         rounds_since_todo = if used_todo { 0 } else { rounds_since_todo + 1 };
         maybe_inject_nag(&mut results, rounds_since_todo, logger);
 
-        logger.log_info("results", &format!("{} tool result(s) ready", results.len()));
+        logger.log_info(
+            "results",
+            &format!("{} tool result(s) ready", results.len()),
+        );
         messages.push(json!({"role": "user", "content": results}));
     }
 }

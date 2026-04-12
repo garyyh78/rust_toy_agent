@@ -14,7 +14,7 @@
 //!   |  +--------------------+  +------------------+  +--------------+  |
 //!   |                                                                   |
 //!   |  Tool dispatch: bash, read_file, write_file, edit_file,          |
-//!   |    TodoWrite, task, load_skill, compress, background_run,        |
+//!   |    TodoWrite, task, load_skill, compact, background_run,         |
 //!   |    check_background, task_create, task_get, task_update,         |
 //!   |    task_list, spawn_teammate, list_teammates, send_message,      |
 //!   |    read_inbox, broadcast, shutdown_request, plan_approval,       |
@@ -36,6 +36,7 @@
 use rust_toy_agent::agent_teams::{MessageBus, TeammateManager};
 use rust_toy_agent::background_tasks::BackgroundManager;
 use rust_toy_agent::context_compact::ContextCompactor;
+use rust_toy_agent::e2e_test::{load_test_case, print_test_result, run_test, save_test_result};
 use rust_toy_agent::llm_client::AnthropicClient;
 use rust_toy_agent::skill_loading::SkillLoader;
 use rust_toy_agent::subagent::Subagent;
@@ -43,7 +44,6 @@ use rust_toy_agent::task_system::TaskManager;
 use rust_toy_agent::team_protocols::ProtocolTracker;
 use rust_toy_agent::todo_manager::TodoManager;
 use rust_toy_agent::tool_runners::{run_bash, run_edit, run_read, run_write};
-use rust_toy_agent::e2e_test::{load_test_case, print_test_result, run_test, save_test_result};
 
 use serde_json::Value as Json;
 use std::env;
@@ -127,8 +127,8 @@ const FULL_TOOLS: &str = r#"[
     }
   },
   {
-    "name": "compress",
-    "description": "Manually compress conversation context.",
+    "name": "compact",
+    "description": "Manually compact conversation context.",
     "input_schema": {"type": "object", "properties": {}}
   },
   {
@@ -325,7 +325,10 @@ fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             wd,
         ),
         "TodoWrite" => {
-            let items = input["items"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+            let items = input["items"]
+                .as_array()
+                .map(|a| a.as_slice())
+                .unwrap_or(&[]);
             let mut mgr = state.todo.lock().unwrap();
             match mgr.update(items) {
                 Ok(r) => r,
@@ -339,14 +342,11 @@ fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(state.subagent.run_subagent(prompt))
         }
-        "load_skill" => state.skills.get_content(input["name"].as_str().unwrap_or("")),
-        "compress" => "Compressing...".to_string(),
-        "background_run" => {
-            state.bg.run(
-                input["command"].as_str().unwrap_or(""),
-                wd,
-            )
-        }
+        "load_skill" => state
+            .skills
+            .get_content(input["name"].as_str().unwrap_or("")),
+        "compact" => "Compacting...".to_string(),
+        "background_run" => state.bg.run(input["command"].as_str().unwrap_or(""), wd),
         "check_background" => state.bg.check(input["task_id"].as_str()),
         "task_create" => {
             let mut mgr = state.task_mgr.lock().unwrap();
@@ -397,7 +397,8 @@ fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             match team.spawn(name, role) {
                 Ok(msg) => {
                     // Clone data for the spawned thread
-                    let client = AnthropicClient::new(&state.client.api_key, &state.client.base_url);
+                    let client =
+                        AnthropicClient::new(&state.client.api_key, &state.client.base_url);
                     let model = state.model.clone();
                     let workdir = state.workdir.clone();
                     let bus = Arc::clone(&state.bus);
@@ -411,8 +412,15 @@ fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
 
                     thread::spawn(move || {
                         teammate_loop(
-                            client, model, workdir, bus, protocols,
-                            &name_owned, &role_owned, &prompt_owned, &team_name,
+                            client,
+                            model,
+                            workdir,
+                            bus,
+                            protocols,
+                            &name_owned,
+                            &role_owned,
+                            &prompt_owned,
+                            &team_name,
                         );
                     });
                     msg
@@ -440,7 +448,10 @@ fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
         "broadcast" => {
             let team = state.team.lock().unwrap();
             let names = team.member_names();
-            match state.bus.broadcast("lead", input["content"].as_str().unwrap_or(""), &names) {
+            match state
+                .bus
+                .broadcast("lead", input["content"].as_str().unwrap_or(""), &names)
+            {
                 Ok(r) => r,
                 Err(e) => format!("Error: {e}"),
             }
@@ -448,12 +459,9 @@ fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
         "shutdown_request" => {
             let teammate = input["teammate"].as_str().unwrap_or("");
             let req_id = state.protocols.create_shutdown_request(teammate);
-            let _ = state.bus.send(
-                "lead",
-                teammate,
-                "Please shut down.",
-                "shutdown_request",
-            );
+            let _ = state
+                .bus
+                .send("lead", teammate, "Please shut down.", "shutdown_request");
             format!("Shutdown request {req_id} sent to '{teammate}'")
         }
         "plan_approval" => {
@@ -501,7 +509,14 @@ async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
         if !notifs.is_empty() {
             let txt: Vec<String> = notifs
                 .iter()
-                .map(|n| format!("[bg:{}] {}: {}", n.task_id, n.status, &n.result[..n.result.len().min(500)]))
+                .map(|n| {
+                    format!(
+                        "[bg:{}] {}: {}",
+                        n.task_id,
+                        n.status,
+                        &n.result[..n.result.len().min(500)]
+                    )
+                })
                 .collect();
             messages.push(serde_json::json!({
                 "role": "user",
@@ -519,13 +534,17 @@ async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
         }
 
         // LLM call
-        let response = match state.client.create_message(
-            &state.model,
-            Some(system),
-            messages,
-            Some(&tools),
-            MAX_TOKENS,
-        ).await {
+        let response = match state
+            .client
+            .create_message(
+                &state.model,
+                Some(system),
+                messages,
+                Some(&tools),
+                MAX_TOKENS,
+            )
+            .await
+        {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("Error: {e}");
@@ -545,7 +564,7 @@ async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
         // Tool execution
         let mut results: Vec<Json> = Vec::new();
         let mut used_todo = false;
-        let mut manual_compress = false;
+        let mut manual_compact = false;
 
         if let Some(content) = response["content"].as_array() {
             for block in content {
@@ -553,8 +572,8 @@ async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
                     let tool_name = block["name"].as_str().unwrap_or("");
                     let input = &block["input"];
 
-                    if tool_name == "compress" {
-                        manual_compress = true;
+                    if tool_name == "compact" {
+                        manual_compact = true;
                     }
 
                     let output = dispatch_tool(state, tool_name, input);
@@ -597,8 +616,8 @@ async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
             "content": results
         }));
 
-        // Manual compress
-        if manual_compress {
+        // Manual compact
+        if manual_compact {
             eprintln!("[manual compact]");
             *messages = state.compactor.auto_compact(messages).await;
             return;
@@ -608,6 +627,7 @@ async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
 
 // ── Teammate Loop ──────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn teammate_loop(
     client: AnthropicClient,
     model: String,
@@ -792,7 +812,10 @@ fn teammate_loop(
                         _ => format!("Unknown tool: {tool_name}"),
                     };
 
-                    eprintln!("  [{name}] {tool_name}: {}", &output[..output.len().min(120)]);
+                    eprintln!(
+                        "  [{name}] {tool_name}: {}",
+                        &output[..output.len().min(120)]
+                    );
                     results.push(serde_json::json!({
                         "type": "tool_result",
                         "tool_use_id": block["id"],
@@ -854,7 +877,10 @@ fn teammate_loop(
                         .and_then(|s| s.trim().parse::<u32>().ok())
                 });
             if let Some(tid) = unclaimed_tid {
-                if task_mgr.update(tid, Some("in_progress"), None, None).is_ok() {
+                if task_mgr
+                    .update(tid, Some("in_progress"), None, None)
+                    .is_ok()
+                {
                     // Identity re-injection for compressed contexts
                     if messages.len() <= 3 {
                         messages.insert(
@@ -937,7 +963,10 @@ async fn run_test_mode(test_name: &str) {
     let results_dir = workdir.join("task_tests").join("test_results");
 
     if !test_path.exists() {
-        eprintln!("Error: Test '{test_name}' not found at {}", test_path.display());
+        eprintln!(
+            "Error: Test '{test_name}' not found at {}",
+            test_path.display()
+        );
         std::process::exit(1);
     }
 
@@ -1027,7 +1056,7 @@ async fn run_repl() {
     eprintln!("  Model: {model}");
     eprintln!("  Workdir: {}", workdir.display());
     eprintln!("  Tools: 23 (bash, read, write, edit, TodoWrite, task, load_skill,");
-    eprintln!("           compress, bg_run, bg_check, task CRUD, team, messaging,");
+    eprintln!("           compact, bg_run, bg_check, task CRUD, team, messaging,");
     eprintln!("           broadcast, shutdown, plan, idle, claim)");
     eprintln!("\x1b[34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
     eprintln!();
@@ -1064,17 +1093,17 @@ async fn run_repl() {
             }
             "/inbox" => {
                 let msgs = state.bus.read_inbox("lead");
-                println!("{}", serde_json::to_string_pretty(&msgs).unwrap_or_default());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&msgs).unwrap_or_default()
+                );
                 continue;
             }
             _ => {}
         }
 
         eprintln!();
-        eprintln!(
-            "\x1b[35m  Turn {}\x1b[0m",
-            &query[..query.len().min(50)]
-        );
+        eprintln!("\x1b[35m  Turn {}\x1b[0m", &query[..query.len().min(50)]);
         eprintln!();
 
         history.push(serde_json::json!({"role": "user", "content": query}));

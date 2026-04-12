@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 
 /// Maximum output size for background task results (50KB).
 const MAX_BG_OUTPUT_SIZE: usize = 50_000;
@@ -193,6 +192,7 @@ impl Default for BackgroundManager {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::time::Duration;
     use tempfile::TempDir;
 
     #[test]

@@ -74,7 +74,11 @@ pub fn safe_path(p: &str, workdir: &Path) -> Result<PathBuf, String> {
 // Each runner takes a workdir, calls safe_path when needed, and returns
 // a string result. Errors are returned as strings, never panicking.
 
-/// Run a shell command via `sh -c`. Blocks dangerous patterns like `rm -rf /`.
+/// Run a shell command via `sh -c`. The substring blocklist below is a
+/// best-effort guard against obvious footguns (`rm -rf /`, `sudo`, ...), NOT
+/// a security boundary — it is trivially bypassed by piping, env tricks, or
+/// alternative paths. Real isolation comes from running the agent inside a
+/// sandbox/VM and keeping `workdir` outside sensitive trees.
 pub fn run_bash(command: &str, workdir: &Path) -> String {
     let blocked = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"];
     if blocked.iter().any(|b| command.contains(b)) {

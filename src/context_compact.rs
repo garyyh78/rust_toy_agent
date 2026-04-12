@@ -116,7 +116,7 @@ impl ContextCompactor {
     }
 
     /// Layer 1: micro_compact - replace old tool results with placeholders
-    pub fn micro_compact(&self, messages: &mut Vec<Json>) {
+    pub fn micro_compact(&self, messages: &mut [Json]) {
         // Collect tool results with their indices
         let mut tool_results: Vec<(usize, usize, Json)> = Vec::new();
 

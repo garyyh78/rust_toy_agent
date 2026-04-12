@@ -1,7 +1,7 @@
 # Rust build artifacts
 /target/
 **/*.rs.bk
-Cargo.lock
+# Cargo.lock IS committed for binary-crate reproducibility.
 
 # IDE files
 .idea/
@@ -20,6 +20,9 @@ logs/
 
 # Test workspaces
 task_tests/*/workspace/
+
+# E2E test result JSONs (transient artifacts; curate manually if valuable)
+task_tests/test_results/
 
 # OS files
 .DS_Store
