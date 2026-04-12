@@ -27,7 +27,7 @@ use serde_json::Value as Json;
 
 const MAX_TODO_ITEMS: usize = 20;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TodoItem {
     pub id: String,
     pub text: String,
@@ -72,10 +72,11 @@ impl TodoManager {
                 .and_then(|v| v.as_str())
                 .unwrap_or("pending")
                 .to_lowercase();
+            let default_id = format!("{}", i + 1);
             let item_id = item
                 .get("id")
                 .and_then(|v| v.as_str())
-                .unwrap_or(&format!("{}", i + 1))
+                .unwrap_or(&default_id)
                 .to_string();
             if text.is_empty() {
                 return Err(format!("Item {item_id}: text required"));

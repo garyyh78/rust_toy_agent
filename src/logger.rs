@@ -98,16 +98,9 @@ impl SessionLogger {
         }
     }
 
-    /// Get current timestamp as HH:MM:SS.
+    /// Get current timestamp as HH:MM:SS in local timezone.
     fn timestamp() -> String {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
-        let secs = now.as_secs();
-        let hours = (secs / 3600) % 24;
-        let minutes = (secs / 60) % 60;
-        let seconds = secs % 60;
-        format!("{hours:02}:{minutes:02}:{seconds:02}")
+        chrono::Local::now().format("%H:%M:%S").to_string()
     }
 
     pub fn log_section(&mut self, title: &str) {

@@ -122,11 +122,6 @@ impl SkillLoader {
         )
     }
 
-    /// Parse YAML frontmatter between --- delimiters (instance method)
-    fn parse_frontmatter(&self, text: &str) -> (SkillMeta, String) {
-        Self::parse_frontmatter_static(text)
-    }
-
     /// Layer 1: short descriptions for the system prompt
     pub fn get_descriptions(&self) -> String {
         if self.skills.is_empty() {
@@ -160,9 +155,11 @@ impl SkillLoader {
         }
     }
 
-    /// Get list of available skill names
+    /// Get list of available skill names (sorted alphabetically)
     pub fn list_skills(&self) -> Vec<&str> {
-        self.skills.keys().map(|k| k.as_str()).collect()
+        let mut skills: Vec<&str> = self.skills.keys().map(|k| k.as_str()).collect();
+        skills.sort();
+        skills
     }
 
     /// Check if a skill exists
