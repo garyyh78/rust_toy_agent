@@ -37,6 +37,10 @@ use std::process::Command as Proc;
 /// Maximum output size for tool results (50KB).
 const MAX_OUTPUT_SIZE: usize = 50_000;
 
+const BASH_ENV_ALLOWLIST: &[&str] = &[
+    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TERM", "TMPDIR", "SHELL", "PWD",
+];
+
 // -- Path helpers --
 // Normalize resolves "." and ".." without touching the filesystem.
 // safe_path joins a user-supplied path to the workdir and rejects
@@ -56,18 +60,44 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     components.iter().collect()
 }
 
-/// Resolve `p` relative to `workdir`, rejecting paths that escape the workspace.
-pub fn safe_path(p: &str, workdir: &Path) -> Result<PathBuf, String> {
-    let workdir_abs = workdir
-        .canonicalize()
-        .unwrap_or_else(|_| workdir.to_path_buf());
-    let raw = workdir_abs.join(p);
-    let normalized = normalize_path(&raw);
-    if normalized.starts_with(&workdir_abs) {
-        Ok(normalized)
-    } else {
-        Err(format!("Path escapes workspace: {p}"))
+fn canonicalize_partial(p: &Path) -> Result<PathBuf, String> {
+    let mut existing = p.to_path_buf();
+    let mut suffix = PathBuf::new();
+    while !existing.exists() {
+        if let Some(name) = existing.file_name() {
+            let name = name.to_owned();
+            existing.pop();
+            if suffix.as_os_str().is_empty() {
+                suffix = PathBuf::from(name);
+            } else {
+                let mut new_suffix = PathBuf::from(name);
+                new_suffix.push(&suffix);
+                suffix = new_suffix;
+            }
+        } else {
+            return Err("root has no name".to_string());
+        }
     }
+    let canon = existing
+        .canonicalize()
+        .map_err(|e| format!("canon: {}", e))?;
+    let mut result = canon;
+    if !suffix.as_os_str().is_empty() {
+        result.push(&suffix);
+    }
+    Ok(result)
+}
+
+pub fn safe_path(p: &str, workdir: &Path) -> Result<PathBuf, String> {
+    let workdir_canon = workdir
+        .canonicalize()
+        .map_err(|e| format!("workdir canon: {}", e))?;
+    let joined = workdir.join(p);
+    let resolved = canonicalize_partial(&joined)?;
+    if !resolved.starts_with(&workdir_canon) {
+        return Err(format!("path escapes sandbox: {}", p));
+    }
+    Ok(resolved)
 }
 
 // -- Tool runners --
@@ -84,12 +114,16 @@ pub fn run_bash(command: &str, workdir: &Path) -> String {
     if blocked.iter().any(|b| command.contains(b)) {
         return "Error: Dangerous command blocked".to_string();
     }
-    match Proc::new("sh")
-        .arg("-c")
-        .arg(command)
-        .current_dir(workdir)
-        .output()
-    {
+    let mut cmd = Proc::new("sh");
+    cmd.arg("-c").arg(command);
+    cmd.current_dir(workdir);
+    cmd.env_clear();
+    for key in BASH_ENV_ALLOWLIST {
+        if let Ok(val) = std::env::var(key) {
+            cmd.env(key, val);
+        }
+    }
+    match cmd.output() {
         Err(e) => format!("Error: {e}"),
         Ok(out) => {
             // Merge stdout + stderr, trim, and cap at 50KB
@@ -216,7 +250,19 @@ mod tests {
         let workdir = std::env::current_dir().unwrap();
         let result = safe_path("../../etc/passwd", &workdir);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("escapes workspace"));
+        assert!(result.unwrap_err().contains("escapes sandbox"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn symlink_outside_workdir_is_rejected() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let outside = tempfile::TempDir::new().unwrap();
+        std::fs::write(outside.path().join("secret"), "x").unwrap();
+        let link = tmp.path().join("escape");
+        std::os::unix::fs::symlink(outside.path(), &link).unwrap();
+        let bad = safe_path("escape/secret", tmp.path());
+        assert!(bad.is_err(), "symlink escape was accepted: {:?}", bad);
     }
 
     // -- run_bash --
@@ -257,60 +303,64 @@ mod tests {
         }
     }
 
+    #[test]
+    fn bash_does_not_inherit_api_key() {
+        std::env::set_var("ANTHROPIC_API_KEY", "sk-secret-test");
+        let out = run_bash("echo $ANTHROPIC_API_KEY", &PathBuf::from("."));
+        assert!(!out.contains("sk-secret-test"), "API key leaked: {out}");
+        std::env::remove_var("ANTHROPIC_API_KEY");
+    }
+
     // -- run_read / run_write / run_edit --
 
     #[test]
     fn test_run_write_and_read() {
-        let tmp = std::env::temp_dir().join("rust_toy_agent_test_write_read.txt");
-        let path = tmp.to_str().unwrap();
-        let workdir = PathBuf::from("/");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let workdir = tmp.path().to_path_buf();
+        let filename = "test_write_read.txt";
 
-        let result = run_write(path, "line1\nline2\nline3", &workdir);
+        let result = run_write(filename, "line1\nline2\nline3", &workdir);
         assert!(result.contains("Wrote"));
 
-        let content = run_read(path, None, &workdir);
+        let content = run_read(filename, None, &workdir);
         assert!(content.contains("line2"));
-        let _ = std::fs::remove_file(&tmp);
     }
 
     #[test]
     fn test_run_read_with_limit() {
-        let tmp = std::env::temp_dir().join("rust_toy_agent_test_limit.txt");
-        let path = tmp.to_str().unwrap();
-        let workdir = PathBuf::from("/");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let workdir = tmp.path().to_path_buf();
+        let filename = "test_limit.txt";
 
-        let _ = std::fs::write(&tmp, "a\nb\nc\nd\ne");
-        let content = run_read(path, Some(2), &workdir);
+        run_write(filename, "a\nb\nc\nd\ne", &workdir);
+        let content = run_read(filename, Some(2), &workdir);
         assert!(content.contains("a"));
         assert!(content.contains("b"));
         assert!(content.contains("more lines"));
-        let _ = std::fs::remove_file(&tmp);
     }
 
     #[test]
     fn test_run_edit() {
-        let tmp = std::env::temp_dir().join("rust_toy_agent_test_edit.txt");
-        let path = tmp.to_str().unwrap();
-        let workdir = PathBuf::from("/");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let workdir = tmp.path().to_path_buf();
+        let filename = "test_edit.txt";
 
-        let _ = std::fs::write(&tmp, "hello world");
-        let result = run_edit(path, "world", "rust", &workdir);
+        run_write(filename, "hello world", &workdir);
+        let result = run_edit(filename, "world", "rust", &workdir);
         assert!(result.contains("Edited"));
 
-        let content = std::fs::read_to_string(&tmp).unwrap();
-        assert_eq!(content, "hello rust");
-        let _ = std::fs::remove_file(&tmp);
+        let content = run_read(filename, None, &workdir);
+        assert!(content.contains("hello rust"));
     }
 
     #[test]
     fn test_run_edit_text_not_found() {
-        let tmp = std::env::temp_dir().join("rust_toy_agent_test_edit_nf.txt");
-        let path = tmp.to_str().unwrap();
-        let workdir = PathBuf::from("/");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let workdir = tmp.path().to_path_buf();
+        let filename = "test_edit_nf.txt";
 
-        let _ = std::fs::write(&tmp, "hello world");
-        let result = run_edit(path, "missing", "replaced", &workdir);
+        run_write(filename, "hello world", &workdir);
+        let result = run_edit(filename, "missing", "replaced", &workdir);
         assert!(result.contains("Text not found"));
-        let _ = std::fs::remove_file(&tmp);
     }
 }

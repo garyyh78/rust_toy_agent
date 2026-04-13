@@ -383,6 +383,46 @@ pub fn tool_claim_task() -> Json {
     })
 }
 
+pub fn tool_worktree_create() -> Json {
+    serde_json::json!({
+        "name": "worktree_create",
+        "description": "Create a git worktree for isolated branch work.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "task_id": {"type": "integer"},
+                "base_ref": {"type": "string"}
+            },
+            "required": ["name"]
+        }
+    })
+}
+
+pub fn tool_worktree_list() -> Json {
+    serde_json::json!({
+        "name": "worktree_list",
+        "description": "List all worktrees.",
+        "input_schema": {"type": "object", "properties": {}}
+    })
+}
+
+pub fn tool_worktree_remove() -> Json {
+    serde_json::json!({
+        "name": "worktree_remove",
+        "description": "Remove a worktree.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "force": {"type": "boolean"},
+                "complete_task": {"type": "boolean"}
+            },
+            "required": ["name"]
+        }
+    })
+}
+
 // -- Convenience collections --
 
 /// Core file tools (bash, read_file, write_file, edit_file)
@@ -440,6 +480,9 @@ pub fn full_agent_tools() -> Vec<Json> {
         tool_plan_approval(),
         tool_idle(),
         tool_claim_task(),
+        tool_worktree_create(),
+        tool_worktree_list(),
+        tool_worktree_remove(),
     ]
 }
 
@@ -589,7 +632,10 @@ pub fn dispatch_tools(
                 .as_array()
                 .map(|a| a.as_slice())
                 .unwrap_or(&[]);
-            let mut mgr = todo.lock().unwrap();
+            let mut mgr = match todo.lock() {
+                Ok(m) => m,
+                Err(e) => return (Some(format!("Error: lock poisoned: {}", e)), true),
+            };
             match mgr.update(items) {
                 Ok(rendered) => (Some(rendered), true),
                 Err(e) => (Some(format!("Error: {e}")), true),
@@ -665,8 +711,8 @@ mod tests {
     #[test]
     fn test_full_agent_tools_count() {
         let tools = full_agent_tools();
-        // Should have all 23 tools
-        assert_eq!(tools.len(), 23);
+        // Should have all 26 tools (23 + 3 worktree)
+        assert_eq!(tools.len(), 26);
 
         let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
         assert!(names.contains(&"bash"));

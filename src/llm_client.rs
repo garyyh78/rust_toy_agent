@@ -138,11 +138,12 @@ impl AnthropicClient {
             match attempt_result {
                 Ok(json) => return Ok(json),
                 Err(SendError::Transient(msg)) if attempt < self.max_retries => {
-                    eprintln!(
-                        "[llm_client] transient error (attempt {}/{}): {msg} — retrying in {:?}",
-                        attempt + 1,
-                        self.max_retries,
-                        backoff
+                    tracing::warn!(
+                        msg = %msg,
+                        attempt = %attempt,
+                        max_retries = %self.max_retries,
+                        backoff_ms = ?backoff,
+                        "transient error, retrying"
                     );
                     tokio::time::sleep(backoff + jitter(backoff)).await;
                     backoff = (backoff * 2).min(MAX_BACKOFF);

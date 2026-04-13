@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -e
+if git diff --cached --name-only | grep -qE '(^|/)\.env$'; then
+    echo "ERROR: refusing to commit .env"
+    exit 1
+fi
+if git diff --cached -U0 | grep -qE '^\+.*sk-ant-[A-Za-z0-9_-]+'; then
+    echo "ERROR: looks like an Anthropic API key is being added"
+    exit 1
+fi

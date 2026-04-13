@@ -5,28 +5,77 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  schedule:
+    - cron: '0 0 * * 0'
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo fmt --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "main"
+          cache-targets: "true"
+          cache-on-failure: "true"
+      - run: cargo clippy --all-targets -- -D warnings
+
   test:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Build
-      run: cargo build --verbose
-    
-    - name: Run tests
-      run: cargo test --verbose
-    
-    - name: Check formatting
-      run: cargo fmt --check
-    
-    - name: Run clippy
-      run: cargo clippy -- -D warnings
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "main"
+          cache-targets: "true"
+          cache-on-failure: "true"
+      - run: cargo build --verbose
+      - run: cargo test --all-targets
+
+  release_build:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "release"
+      - run: cargo build --release --all-targets
+      - run: cargo run --release -- --help
+      - run: cargo run --release -- --test invalid 2>&1 | grep -q 'unknown test'
+      - run: ls task_tests/sum_1_to_n/task.md
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "main"
+          cache-targets: "true"
+          cache-on-failure: "true"
+      - run: cargo audit
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE_URL: https://raw.githubusercontent.com/gitleaks/gitleaks/master/LICENSE

@@ -31,7 +31,10 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
                 .as_array()
                 .map(|a| a.as_slice())
                 .unwrap_or(&[]);
-            let mut mgr = state.todo.lock().unwrap();
+            let mut mgr = match state.todo.lock() {
+                Ok(m) => m,
+                Err(e) => return format!("Error: lock poisoned: {}", e),
+            };
             match mgr.update(items) {
                 Ok(r) => r,
                 Err(e) => format!("Error: {e}"),
@@ -45,7 +48,7 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             } else {
                 prompt.to_string()
             };
-            eprintln!("  > task ({desc}): {preview}");
+            tracing::info!(desc = %desc, prompt = %preview, "dispatching subagent task");
 
             // Note: This runs the subagent synchronously since dispatch_tool is sync.
             // The nested runtime issue from [1] is avoided by blocking on the runtime
@@ -61,7 +64,10 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
         "background_run" => state.bg.run(input["command"].as_str().unwrap_or(""), wd),
         "check_background" => state.bg.check(input["task_id"].as_str()),
         "task_create" => {
-            let mut mgr = state.task_mgr.lock().unwrap();
+            let mut mgr = match state.task_mgr.lock() {
+                Ok(m) => m,
+                Err(e) => return format!("Error: lock poisoned: {}", e),
+            };
             match mgr.create(
                 input["subject"].as_str().unwrap_or(""),
                 input["description"].as_str().unwrap_or(""),
@@ -71,14 +77,20 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             }
         }
         "task_get" => {
-            let mgr = state.task_mgr.lock().unwrap();
+            let mgr = match state.task_mgr.lock() {
+                Ok(m) => m,
+                Err(e) => return format!("Error: lock poisoned: {}", e),
+            };
             match mgr.get(input["task_id"].as_u64().unwrap_or(0) as u32) {
                 Ok(r) => r,
                 Err(e) => format!("Error: {e}"),
             }
         }
         "task_update" => {
-            let mut mgr = state.task_mgr.lock().unwrap();
+            let mut mgr = match state.task_mgr.lock() {
+                Ok(m) => m,
+                Err(e) => return format!("Error: lock poisoned: {}", e),
+            };
             match mgr.update(
                 input["task_id"].as_u64().unwrap_or(0) as u32,
                 input["status"].as_str(),
@@ -98,14 +110,20 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             }
         }
         "task_list" => {
-            let mgr = state.task_mgr.lock().unwrap();
+            let mgr = match state.task_mgr.lock() {
+                Ok(m) => m,
+                Err(e) => return format!("Error: lock poisoned: {}", e),
+            };
             mgr.list_all()
         }
         "spawn_teammate" => {
             let name = input["name"].as_str().unwrap_or("");
             let role = input["role"].as_str().unwrap_or("");
             let prompt = input["prompt"].as_str().unwrap_or("");
-            let mut team = state.team.lock().unwrap();
+            let mut team = match state.team.lock() {
+                Ok(t) => t,
+                Err(e) => return format!("Error: lock poisoned: {}", e),
+            };
             match team.spawn(name, role) {
                 Ok(msg) => {
                     // Clone data for the spawned thread
@@ -141,7 +159,10 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             }
         }
         "list_teammates" => {
-            let team = state.team.lock().unwrap();
+            let team = match state.team.lock() {
+                Ok(t) => t,
+                Err(e) => return format!("Error: lock poisoned: {}", e),
+            };
             team.list_all()
         }
         "send_message" => {
@@ -158,7 +179,10 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             serde_json::to_string_pretty(&msgs).unwrap_or_default()
         }
         "broadcast" => {
-            let team = state.team.lock().unwrap();
+            let team = match state.team.lock() {
+                Ok(t) => t,
+                Err(e) => return format!("Error: lock poisoned: {}", e),
+            };
             let names = team.member_names();
             match state
                 .bus
@@ -187,7 +211,10 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
         }
         "idle" => "Lead does not idle.".to_string(),
         "claim_task" => {
-            let mut mgr = state.task_mgr.lock().unwrap();
+            let mut mgr = match state.task_mgr.lock() {
+                Ok(m) => m,
+                Err(e) => return format!("Error: lock poisoned: {}", e),
+            };
             match mgr.update(
                 input["task_id"].as_u64().unwrap_or(0) as u32,
                 Some("in_progress"),
@@ -195,6 +222,28 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
                 None,
             ) {
                 Ok(_) => format!("Claimed task #{}", input["task_id"]),
+                Err(e) => format!("Error: {e}"),
+            }
+        }
+        "worktree_create" => {
+            let name = input["name"].as_str().unwrap_or("");
+            let task_id = input["task_id"].as_u64().map(|n| n as u32);
+            let base_ref = input["base_ref"].as_str().unwrap_or("HEAD");
+            match state.worktree.create(name, task_id, base_ref) {
+                Ok(r) => r,
+                Err(e) => format!("Error: {e}"),
+            }
+        }
+        "worktree_list" => match state.worktree.list_all() {
+            Ok(r) => r,
+            Err(e) => format!("Error: {e}"),
+        },
+        "worktree_remove" => {
+            let name = input["name"].as_str().unwrap_or("");
+            let force = input["force"].as_bool().unwrap_or(false);
+            let complete_task = input["complete_task"].as_bool().unwrap_or(false);
+            match state.worktree.remove(name, force, complete_task) {
+                Ok(r) => r,
                 Err(e) => format!("Error: {e}"),
             }
         }
@@ -216,7 +265,7 @@ mod tests {
     fn test_state() -> State {
         let client = AnthropicClient::new("test_key", "https://api.anthropic.com");
         let workdir = PathBuf::from("/tmp");
-        State::new(client, "test-model".to_string(), workdir)
+        State::new(client, "test-model".to_string(), workdir).unwrap()
     }
 
     #[test]
@@ -241,5 +290,21 @@ mod tests {
         let input = serde_json::json!({});
         let result = dispatch_tool(&state, "compact", &input);
         assert_eq!(result, "Compacting...");
+    }
+
+    #[test]
+    fn test_dispatch_worktree_list() {
+        let state = test_state();
+        let input = serde_json::json!({});
+        let result = dispatch_tool(&state, "worktree_list", &input);
+        assert!(result.contains("No worktrees") || result.contains("["));
+    }
+
+    #[test]
+    fn test_dispatch_worktree_create_missing_git() {
+        let state = test_state();
+        let input = serde_json::json!({"name": "test-wt"});
+        let result = dispatch_tool(&state, "worktree_create", &input);
+        assert!(result.contains("Error:"));
     }
 }

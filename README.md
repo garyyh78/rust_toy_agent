@@ -66,7 +66,13 @@ src/
 | `team_protocols` | Shutdown and plan approval with DashMap request tracking | `ProtocolTracker::new()`, `create_shutdown_request()`, `respond_shutdown()`, `submit_plan()`, `review_plan()` |
 | `autonomous_agents` | Idle polling, auto task claiming, filesystem watching | `scan_unclaimed_tasks()`, `claim_task()`, `watch_tasks_dir()`, `poll_for_work()`, `make_identity_block()` |
 | `worktree` | Git worktree management with task binding and event bus | `WorktreeManager::new()`, `create()`, `remove()`, `keep()`, `run()`, `EventBus`, `TaskBinding` |
+| `background_tasks` | Background task execution with notification queue | `BackgroundTaskRunner::new()`, `spawn()`, `submit()`, `poll()` |
+| `task_system` | Persistent task management with dependency graph | `TaskSystem::new()`, `create_task()`, `update_status()`, `get_dependencies()` |
 | `e2e_test` | End-to-end test runner with result tracking | `run_test()`, `load_test_case()`, `save_test_result()` |
+| `bin_core` | Core binary components: REPL, state, dispatch | `run_repl()`, `AppState::new()`, `dispatch()` |
+| `config` | Configuration loading from environment | `Config::from_env()`, `load()` |
+| `metrics` | Round-level metrics collection and reporting | `RoundMetrics::new()`, `record()`, `summarize()` |
+| `text_util` | Text utilities for token counting and truncation | `count_tokens()`, `truncate_text()`, `split_by_token_limit()` |
 
 ### Tools
 
@@ -129,7 +135,8 @@ Run E2E tests to evaluate the agent on real programming tasks:
 
 ```bash
 # Run a specific test
-cargo run -- --test pi_series
+cargo run -- --test sum_1_to_n
+Available tests: `sum_1_to_n`, `fibonacci_sum`, `prime_sum`, `literary_style_detection`.
 
 # Run all tests in task_tests/
 for dir in task_tests/*/; do
@@ -142,17 +149,17 @@ done
 
 ```
 task_tests/
-├── pi_series/
+├── sum_1_to_n/
 │   └── test.json          # Test case definition
 └── test_results/          # Auto-generated results
-    └── pi_series_<timestamp>.json
+    └── sum_1_to_n_<timestamp>.json
 ```
 
 **Test JSON format:**
 
 ```json
 {
-  "name": "pi_series",
+  "name": "sum_1_to_n",
   "prompt": "Write a Python program to...",
   "expected_output": "expected result",
   "language": "python"
@@ -165,7 +172,7 @@ task_tests/
 - Execution time (ms)
 - Token count (input/output)
 
-Results are auto-committed to git after each test run.
+- Results are written to `task_tests/test_results/` (gitignored). Curate and commit worthwhile runs manually.
 
 | Module | Tests | What's covered |
 |--------|-------|----------------|

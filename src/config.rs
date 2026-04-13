@@ -20,8 +20,17 @@ pub const SUMMARIZE_MAX_TOKENS: u32 = 2_000;
 /// Max rounds of a single agent_loop before forced stop.
 pub const MAX_ROUNDS: u32 = 50;
 
+/// Token threshold for triggering auto-compaction.
+pub const TOKEN_THRESHOLD: usize = 100_000;
+
+/// Teammate agents follow subagent conventions.
+pub const TEAMMATE_MAX_TOKENS: u32 = 8_000;
+
 /// Teammate agents follow subagent conventions.
 pub const TEAMMATE_MAX_ROUNDS: u32 = 30;
+
+/// Skill-loading helper agent.
+pub const SKILL_MAX_TOKENS: u32 = 8_000;
 
 /// Nag threshold: how many rounds without a todo touch
 /// before we inject a reminder.
@@ -35,3 +44,6 @@ pub const POLL_INTERVAL_SECS: u64 = 5;
 
 /// Idle timeout (seconds).
 pub const IDLE_TIMEOUT_SECS: u64 = 60;
+
+/// Bash command timeout (seconds).
+pub const BASH_TIMEOUT_SECS: u64 = 60;

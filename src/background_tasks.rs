@@ -5,6 +5,7 @@
 //!
 //! Key insight: "Fire and forget -- the agent doesn't block while the command runs."
 
+use crate::text_util::truncate_chars;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -12,6 +13,23 @@ use std::thread;
 
 /// Maximum output size for background task results (50KB).
 const MAX_BG_OUTPUT_SIZE: usize = 50_000;
+
+const BASH_ENV_ALLOWLIST: &[&str] = &[
+    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TERM", "TMPDIR", "SHELL", "PWD",
+];
+
+fn build_command(command: &str, workdir: &std::path::Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new("sh");
+    cmd.arg("-c").arg(command);
+    cmd.current_dir(workdir);
+    cmd.env_clear();
+    for key in BASH_ENV_ALLOWLIST {
+        if let Ok(val) = std::env::var(key) {
+            cmd.env(key, val);
+        }
+    }
+    cmd
+}
 
 /// Maximum length for notification result text.
 const MAX_NOTIFICATION_SIZE: usize = 500;
@@ -62,7 +80,13 @@ impl BackgroundManager {
         let workdir = workdir.to_path_buf();
 
         {
-            let mut tasks_lock = tasks.lock().unwrap();
+            let mut tasks_lock = match tasks.lock() {
+                Ok(l) => l,
+                Err(e) => {
+                    tracing::error!(error = %e, "lock poisoned");
+                    return "Error: lock poisoned".to_string();
+                }
+            };
             tasks_lock.insert(
                 task_id.clone(),
                 BackgroundTask {
@@ -75,10 +99,7 @@ impl BackgroundManager {
         }
 
         thread::spawn(move || {
-            let status = std::process::Command::new("sh")
-                .arg("-c")
-                .arg(command_for_status)
-                .current_dir(&workdir)
+            let status = build_command(&command_for_status, &workdir)
                 .output()
                 .map(|o| {
                     if o.status.success() {
@@ -89,10 +110,7 @@ impl BackgroundManager {
                 })
                 .unwrap_or_else(|_| "error".to_string());
 
-            let output = std::process::Command::new("sh")
-                .arg("-c")
-                .arg(command_for_output)
-                .current_dir(&workdir)
+            let output = build_command(&command_for_output, &workdir)
                 .output()
                 .map(|o| {
                     let out = o.stdout;
@@ -103,13 +121,19 @@ impl BackgroundManager {
                 .unwrap_or_else(|e| format!("Error: {}", e));
 
             let output_truncated = if output.len() > MAX_BG_OUTPUT_SIZE {
-                output[..MAX_BG_OUTPUT_SIZE].to_string()
+                truncate_chars(&output, MAX_BG_OUTPUT_SIZE)
             } else {
                 output.clone()
             };
 
             {
-                let mut tasks_lock = tasks.lock().unwrap();
+                let mut tasks_lock = match tasks.lock() {
+                    Ok(l) => l,
+                    Err(e) => {
+                        tracing::error!(error = %e, "lock poisoned");
+                        return;
+                    }
+                };
                 if let Some(task) = tasks_lock.get_mut(&task_id_for_thread) {
                     task.status = status.clone();
                     task.result = Some(output_truncated.clone());
@@ -117,14 +141,19 @@ impl BackgroundManager {
             }
 
             {
-                let mut queue = notification_queue.lock().unwrap();
+                let mut queue = match notification_queue.lock() {
+                    Ok(l) => l,
+                    Err(e) => {
+                        tracing::error!(error = %e, "lock poisoned");
+                        return;
+                    }
+                };
                 queue.push(Notification {
                     task_id: task_id_for_thread,
                     status,
-                    command: command_owned[..command_owned.len().min(MAX_COMMAND_DISPLAY)]
-                        .to_string(),
+                    command: truncate_chars(&command_owned, MAX_COMMAND_DISPLAY),
                     result: if output_truncated.len() > MAX_NOTIFICATION_SIZE {
-                        output_truncated[..MAX_NOTIFICATION_SIZE].to_string()
+                        truncate_chars(&output_truncated, MAX_NOTIFICATION_SIZE)
                     } else {
                         output_truncated
                     },
@@ -135,12 +164,15 @@ impl BackgroundManager {
         format!(
             "Background task {} started: {}",
             task_id,
-            &command[..command.len().min(MAX_COMMAND_DISPLAY)]
+            &truncate_chars(command, MAX_COMMAND_DISPLAY)
         )
     }
 
     pub fn check(&self, task_id: Option<&str>) -> String {
-        let tasks = self.tasks.lock().unwrap();
+        let tasks = match self.tasks.lock() {
+            Ok(t) => t,
+            Err(e) => return format!("Error: lock poisoned: {}", e),
+        };
 
         if let Some(tid) = task_id {
             if let Some(task) = tasks.get(tid) {
@@ -148,7 +180,7 @@ impl BackgroundManager {
                 return format!(
                     "[{}] {}\n{}",
                     task.status,
-                    &task.command[..task.command.len().min(MAX_STATUS_COMMAND_DISPLAY)],
+                    &truncate_chars(&task.command, MAX_STATUS_COMMAND_DISPLAY),
                     result
                 );
             } else {
@@ -167,7 +199,7 @@ impl BackgroundManager {
                     "{}: [{}] {}",
                     t.task_id,
                     t.status,
-                    &t.command[..t.command.len().min(MAX_STATUS_COMMAND_DISPLAY)]
+                    truncate_chars(&t.command, MAX_STATUS_COMMAND_DISPLAY)
                 )
             })
             .collect();
@@ -176,7 +208,13 @@ impl BackgroundManager {
     }
 
     pub fn drain_notifications(&self) -> Vec<Notification> {
-        let mut queue = self.notification_queue.lock().unwrap();
+        let mut queue = match self.notification_queue.lock() {
+            Ok(q) => q,
+            Err(e) => {
+                tracing::error!(error = %e, "lock poisoned");
+                return vec![];
+            }
+        };
         let notifs: Vec<Notification> = queue.drain(..).collect();
         notifs
     }

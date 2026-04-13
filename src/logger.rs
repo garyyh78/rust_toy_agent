@@ -34,33 +34,47 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::Path;
 
+#[allow(dead_code)]
+const MAX_LOG_FILES: usize = 20;
+
+#[allow(dead_code)]
+fn prune_old_logs(dir: &Path) -> std::io::Result<()> {
+    let mut entries: Vec<_> = std::fs::read_dir(dir)?
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("session_"))
+        .collect();
+    entries.sort_by_key(|e| e.metadata().and_then(|m| m.modified()).ok());
+    while entries.len() > MAX_LOG_FILES {
+        let oldest = entries.remove(0);
+        let _ = std::fs::remove_file(oldest.path());
+    }
+    Ok(())
+}
+
 // -- Free functions (stderr only, no file) --
 
 pub fn log_section(title: &str) {
-    eprintln!("\x1b[34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
-    eprintln!("\x1b[34m {}\x1b[0m", title);
-    eprintln!("\x1b[34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
+    eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    eprintln!(" {}", title);
+    eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 }
 
 pub fn log_info(label: &str, value: &str) {
-    eprintln!("\x1b[36m  {:<12}\x1b[0m {}", label, value);
+    eprintln!("  {:<12} {}", label, value);
 }
 
 pub fn log_step(step: &str, detail: &str) {
-    eprintln!("\x1b[33m  {step}\x1b[0m {detail}");
+    eprintln!("  {step} {detail}");
 }
 
 pub fn log_output_preview(output: &str) {
     let lines: Vec<&str> = output.lines().take(5).collect();
     let truncated = output.lines().count() > 5;
     for line in &lines {
-        eprintln!("\x1b[90m    {line}\x1b[0m");
+        eprintln!("    {line}");
     }
     if truncated {
-        eprintln!(
-            "\x1b[90m    ... ({} more lines)\x1b[0m",
-            output.lines().count() - 5
-        );
+        eprintln!("    ... ({} more lines)", output.lines().count() - 5);
     }
 }
 
@@ -88,13 +102,16 @@ impl SessionLogger {
             .append(true)
             .open(path)
             .map_err(|e| format!("Failed to open log file {path}: {e}"))?;
+        let _ = prune_old_logs(Path::new(path).parent().unwrap());
         Ok(Self { file: Some(file) })
     }
 
     /// Write a line to the log file (no-op if no file).
     fn write_file(&mut self, line: &str) {
         if let Some(ref mut f) = self.file {
-            let _ = writeln!(f, "{line}");
+            if let Err(e) = writeln!(f, "{line}") {
+                tracing::error!(error = %e, "log file write failed");
+            }
         }
     }
 
@@ -199,6 +216,7 @@ impl SessionLogger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     // -- Free function tests --
 
@@ -246,9 +264,9 @@ mod tests {
 
     #[test]
     fn test_session_logger_creates_file() {
-        let tmp = std::env::temp_dir().join("rust_toy_agent_session_test.log");
-        let path = tmp.to_str().unwrap();
-        let _ = std::fs::remove_file(&tmp);
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("session_test.log");
+        let path = log_path.to_str().unwrap();
 
         let mut logger = SessionLogger::new(path).unwrap();
         logger.log_session_start("test-model", "/tmp");
@@ -260,30 +278,29 @@ mod tests {
         logger.log_agent_response("Here are the files.");
         logger.log_session_end();
 
-        let content = std::fs::read_to_string(&tmp).unwrap();
+        let content = std::fs::read_to_string(&log_path).unwrap();
         assert!(content.contains("SESSION START"));
         assert!(content.contains("Round 1"));
         assert!(content.contains("USER > list files"));
         assert!(content.contains("AGENT < Here are the files."));
         assert!(content.contains("SESSION END"));
         assert!(content.contains("output line 1"));
-        let _ = std::fs::remove_file(&tmp);
+        drop(tmp_dir);
     }
 
     #[test]
     fn test_session_logger_creates_parent_dirs() {
-        let tmp = std::env::temp_dir().join("rust_agent_test_sub/nested/session.log");
-        let path = tmp.to_str().unwrap();
-        let _ = std::fs::remove_file(&tmp);
-        let _ = std::fs::remove_dir_all(tmp.parent().unwrap().parent().unwrap());
+        let tmp_dir = TempDir::new().unwrap();
+        let log_path = tmp_dir.path().join("nested/session.log");
+        let path = log_path.to_str().unwrap();
 
         let mut logger = SessionLogger::new(path).unwrap();
         logger.log_info("test", "nested dir");
 
-        assert!(tmp.exists());
-        let content = std::fs::read_to_string(&tmp).unwrap();
+        assert!(log_path.exists());
+        let content = std::fs::read_to_string(&log_path).unwrap();
         assert!(content.contains("nested dir"));
-        let _ = std::fs::remove_dir_all(tmp.parent().unwrap().parent().unwrap());
+        drop(tmp_dir);
     }
 
     #[test]
@@ -303,5 +320,30 @@ mod tests {
         logger.log_agent_response("response");
         logger.log_session_start("m", "/d");
         logger.log_session_end();
+    }
+
+    #[test]
+    fn test_prune_old_logs_keeps_20() {
+        let tmp_dir = TempDir::new().unwrap();
+        let prune_dir = tmp_dir.path().join("prune_test");
+        std::fs::create_dir_all(&prune_dir).unwrap();
+
+        for i in 0..25 {
+            let path = prune_dir.join(format!("session_{:02}.log", i));
+            std::fs::write(&path, format!("log {}", i)).unwrap();
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        prune_old_logs(&prune_dir).unwrap();
+
+        let remaining: Vec<_> = std::fs::read_dir(&prune_dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("session_"))
+            .collect();
+        assert_eq!(remaining.len(), 20);
+
+        drop(tmp_dir);
     }
 }

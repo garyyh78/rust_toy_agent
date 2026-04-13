@@ -10,15 +10,23 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+fn default_status() -> String {
+    "pending".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Task {
     pub id: u32,
     pub subject: String,
+    #[serde(default)]
     pub description: String,
+    #[serde(default = "default_status")]
     pub status: String,
-    #[serde(rename = "blockedBy")]
+    #[serde(default, rename = "blockedBy")]
     pub blocked_by: Vec<u32>,
+    #[serde(default)]
     pub blocks: Vec<u32>,
+    #[serde(default)]
     pub owner: String,
 }
 
@@ -131,7 +139,9 @@ impl TaskManager {
                 if let Ok(mut blocked) = self.load(*blocked_id) {
                     if !blocked.blocked_by.contains(&task_id) {
                         blocked.blocked_by.push(task_id);
-                        let _ = self.save(&blocked);
+                        if let Err(e) = self.save(&blocked) {
+                            tracing::error!(error = %e, "save failed");
+                        }
                     }
                 }
             }
@@ -151,7 +161,9 @@ impl TaskManager {
                             if let Ok(mut task) = serde_json::from_str::<Task>(&content) {
                                 if task.blocked_by.contains(&completed_id) {
                                     task.blocked_by.retain(|&x| x != completed_id);
-                                    let _ = self.save(&task);
+                                    if let Err(e) = self.save(&task) {
+                                        tracing::error!(error = %e, "save failed");
+                                    }
                                 }
                             }
                         }

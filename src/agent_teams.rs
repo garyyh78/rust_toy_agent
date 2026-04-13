@@ -261,6 +261,7 @@ impl TeammateManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::LEAD;
     use tempfile::TempDir;
 
     // -- Message tests --
@@ -288,13 +289,13 @@ mod tests {
     #[test]
     fn test_message_bus_send_and_read() {
         let bus = MessageBus::new();
-        let result = bus.send("lead", "alice", "do task", "message");
+        let result = bus.send(LEAD, "alice", "do task", "message");
         assert!(result.is_ok());
         assert!(result.unwrap().contains("alice"));
 
         let msgs = bus.read_inbox("alice");
         assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].from, "lead");
+        assert_eq!(msgs[0].from, LEAD);
         assert_eq!(msgs[0].content, "do task");
 
         // Inbox is drained
@@ -305,7 +306,7 @@ mod tests {
     #[test]
     fn test_message_bus_invalid_type() {
         let bus = MessageBus::new();
-        let result = bus.send("lead", "alice", "test", "invalid_type");
+        let result = bus.send(LEAD, "alice", "test", "invalid_type");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid type"));
     }
@@ -313,8 +314,8 @@ mod tests {
     #[test]
     fn test_message_bus_broadcast() {
         let bus = MessageBus::new();
-        let teammates = vec!["alice".to_string(), "bob".to_string(), "lead".to_string()];
-        let result = bus.broadcast("lead", "hello everyone", &teammates);
+        let teammates = vec!["alice".to_string(), "bob".to_string(), LEAD.to_string()];
+        let result = bus.broadcast(LEAD, "hello everyone", &teammates);
         assert!(result.unwrap().contains("Broadcast to 2"));
 
         let alice_msgs = bus.read_inbox("alice");
@@ -325,16 +326,16 @@ mod tests {
         assert_eq!(bob_msgs.len(), 1);
 
         // Lead should not receive their own broadcast
-        let lead_msgs = bus.read_inbox("lead");
+        let lead_msgs = bus.read_inbox(LEAD);
         assert!(lead_msgs.is_empty());
     }
 
     #[test]
     fn test_message_bus_multiple_messages() {
         let bus = MessageBus::new();
-        bus.send("lead", "alice", "msg1", "message").unwrap();
+        bus.send(LEAD, "alice", "msg1", "message").unwrap();
         bus.send("bob", "alice", "msg2", "message").unwrap();
-        bus.send("lead", "bob", "msg3", "message").unwrap();
+        bus.send(LEAD, "bob", "msg3", "message").unwrap();
 
         let alice_msgs = bus.read_inbox("alice");
         assert_eq!(alice_msgs.len(), 2);
@@ -349,7 +350,7 @@ mod tests {
     fn test_message_bus_all_msg_types() {
         let bus = MessageBus::new();
         for msg_type in VALID_MSG_TYPES {
-            let result = bus.send("lead", "alice", "test", msg_type);
+            let result = bus.send(LEAD, "alice", "test", msg_type);
             assert!(result.is_ok(), "Failed for type: {msg_type}");
         }
         let msgs = bus.read_inbox("alice");

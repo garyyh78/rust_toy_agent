@@ -34,6 +34,7 @@
 use crate::config::LEAD_MAX_TOKENS;
 use crate::llm_client::AnthropicClient;
 use crate::logger::SessionLogger;
+use crate::text_util::truncate_chars;
 use crate::todo_manager::TodoManager;
 use crate::tools::dispatch_tools;
 use serde_json::json;
@@ -49,16 +50,39 @@ use std::sync::{Arc, Mutex};
 /// The conversation history is a vector of JSON message objects.
 pub type Messages = Vec<Json>;
 
+/// Extract the final text from the last assistant message.
+pub fn extract_final_text(messages: &[Json]) -> String {
+    let mut text = String::new();
+    if let Some(last) = messages.last() {
+        if let Some(blocks) = last["content"].as_array() {
+            for block in blocks {
+                if block["type"] == "text" {
+                    if let Some(t) = block["text"].as_str() {
+                        if !text.is_empty() {
+                            text.push('\n');
+                        }
+                        text.push_str(t);
+                    }
+                }
+            }
+        }
+    }
+    text
+}
+
 /// Validate that every tool_use block has a matching tool_result immediately after.
 /// Returns an error description if pairing is broken.
 fn validate_tool_pairing(messages: &[Json]) -> Option<String> {
+    if messages.len() < 2 {
+        return None;
+    }
     for i in 0..messages.len() - 1 {
         if messages[i]["role"] == "assistant" {
             if let Some(blocks) = messages[i]["content"].as_array() {
                 for block in blocks {
                     if block["type"] == "tool_use" {
                         let tool_id = block["id"].as_str().unwrap_or("unknown");
-                        let next = &messages[i + 1];
+                        let next = messages.get(i + 1).unwrap();
                         let has_result = next["content"]
                             .as_array()
                             .map(|arr| {
@@ -82,15 +106,26 @@ fn validate_tool_pairing(messages: &[Json]) -> Option<String> {
     None
 }
 
-/// Keep only the last N conversation rounds to prevent history bloat.
-/// Always preserves the first user message (index 0).
 fn truncate_messages(messages: &mut Messages, max_rounds: usize) {
-    // Each round = 2 messages (assistant + user tool_result)
-    let max_messages = 1 + max_rounds * 2; // first user + N rounds
-    if messages.len() > max_messages {
-        let remove_count = messages.len() - max_messages;
-        messages.drain(1..1 + remove_count);
+    let each_round = 2;
+    let target_len = 1 + max_rounds * each_round;
+    if messages.len() <= target_len {
+        return;
     }
+    let mut cut = messages.len() - target_len;
+    while cut < messages.len() {
+        let prev_is_assistant_tool_use = messages[cut - 1]["role"] == "assistant"
+            && messages[cut - 1]["content"]
+                .as_array()
+                .map(|arr| arr.iter().any(|b| b["type"] == "tool_use"))
+                .unwrap_or(false);
+        if prev_is_assistant_tool_use {
+            cut += 1;
+            continue;
+        }
+        break;
+    }
+    messages.drain(1..cut);
 }
 
 /// Log round header and basic info.
@@ -112,8 +147,13 @@ async fn call_llm(
 ) -> Option<Json> {
     logger.log_step("→", &format!("Calling Agent Model ({model})..."));
 
-    let body =
-        AnthropicClient::build_request_body(model, Some(system), messages, Some(tools), LEAD_MAX_TOKENS);
+    let body = AnthropicClient::build_request_body(
+        model,
+        Some(system),
+        messages,
+        Some(tools),
+        LEAD_MAX_TOKENS,
+    );
     let body_len = serde_json::to_string(&body).unwrap_or_default().len();
     logger.log_info("request_size", &format!("{body_len} bytes"));
     logger.log_info("max_tokens", &LEAD_MAX_TOKENS.to_string());
@@ -178,7 +218,7 @@ fn dispatch_tool_calls(
                     &format!("[{}]", i + 1),
                     &format!("{tool_name}: \x1b[1m{:?}\x1b[0m", block["input"]),
                 );
-                logger.log_info("id", &tool_id[..std::cmp::min(8, tool_id.len())]);
+                logger.log_info("id", &truncate_chars(tool_id, 8));
 
                 let (output, did_todo) = dispatch_tools(tool_name, &block["input"], workdir, todo);
                 let output = output.unwrap_or_else(|| format!("Unknown tool: {tool_name}"));
@@ -345,14 +385,46 @@ mod tests {
         let workdir = std::path::PathBuf::from("/test/project");
         let system = format!(
             "You are a coding agent at {}. \
-Use the todo tool to plan multi-step tasks. Mark in_progress before starting, completed when done. \
-Prefer tools over prose.",
+ Use the todo tool to plan multi-step tasks. Mark in_progress before starting, completed when done. \
+ Prefer tools over prose.",
             workdir.display()
         );
         assert!(system.contains("/test/project"));
         assert!(system.contains("todo tool"));
         assert!(system.contains("in_progress"));
         assert!(system.contains("completed"));
+    }
+
+    #[test]
+    fn test_extract_final_text_only() {
+        let messages = vec![
+            json!({"role": "assistant", "content": [{"type": "text", "text": "Hello, world!"}]}),
+        ];
+        assert_eq!(extract_final_text(&messages), "Hello, world!");
+    }
+
+    #[test]
+    fn test_extract_final_text_tool_use_only() {
+        let messages = vec![
+            json!({"role": "assistant", "content": [{"type": "tool_use", "id": "tool_1", "name": "Read"}]}),
+        ];
+        assert_eq!(extract_final_text(&messages), "");
+    }
+
+    #[test]
+    fn test_extract_final_text_mixed_content() {
+        let messages = vec![json!({"role": "assistant", "content": [
+            {"type": "text", "text": "First part."},
+            {"type": "tool_use", "id": "tool_1", "name": "Read"},
+            {"type": "text", "text": "Second part."}
+        ]})];
+        assert_eq!(extract_final_text(&messages), "First part.\nSecond part.");
+    }
+
+    #[test]
+    fn test_extract_final_text_empty() {
+        let messages: Vec<Json> = vec![];
+        assert_eq!(extract_final_text(&messages), "");
     }
 
     #[test]
@@ -387,7 +459,10 @@ Prefer tools over prose.",
 
         // Use the production function
         let err = validate_tool_pairing(&messages);
-        assert!(err.is_some(), "Expected pairing error for corrupted history");
+        assert!(
+            err.is_some(),
+            "Expected pairing error for corrupted history"
+        );
     }
 
     #[test]
@@ -410,7 +485,10 @@ Prefer tools over prose.",
         ];
 
         // Use the production function
-        assert!(validate_tool_pairing(&messages).is_none(), "Expected valid pairing");
+        assert!(
+            validate_tool_pairing(&messages).is_none(),
+            "Expected valid pairing"
+        );
     }
 
     #[test]
@@ -437,7 +515,10 @@ Prefer tools over prose.",
         ];
 
         // Use the production function
-        assert!(validate_tool_pairing(&messages).is_none(), "Expected valid pairing");
+        assert!(
+            validate_tool_pairing(&messages).is_none(),
+            "Expected valid pairing"
+        );
     }
 
     #[test]
@@ -460,7 +541,7 @@ Prefer tools over prose.",
     #[test]
     fn test_nag_reminder_appended_to_tool_result() {
         // Simulate what agent_loop does when rounds_since_todo >= 3
-        let mut results = vec![json!({
+        let mut results = [json!({
             "type": "tool_result",
             "tool_use_id": "call_123",
             "content": "[ ] #1: Write tests\n(0/1 completed)"
@@ -486,7 +567,7 @@ Prefer tools over prose.",
     #[test]
     fn test_nag_reminder_skipped_when_no_results() {
         // If there are no tool results, don't inject anything
-        let mut results: Vec<Json> = vec![];
+        let results: Vec<Json> = vec![];
         let rounds_since_todo = 3usize;
 
         if rounds_since_todo >= 3 && !results.is_empty() {
@@ -600,5 +681,281 @@ Prefer tools over prose.",
         assert_eq!(err["type"].as_str().unwrap(), "invalid_request_error");
         assert_eq!(err["param"].as_str().unwrap(), "messages[0].content");
         assert_eq!(err["code"].as_str().unwrap(), "invalid_value");
+    }
+
+    // -- [2] empty / single-message history boundary tests --
+
+    #[test]
+    fn test_validate_empty_history_is_ok() {
+        assert!(validate_tool_pairing(&[]).is_none());
+    }
+
+    #[test]
+    fn test_validate_single_user_message_is_ok() {
+        let msg = json!({"role": "user", "content": "hi"});
+        assert!(validate_tool_pairing(&[msg]).is_none());
+    }
+
+    #[test]
+    fn test_validate_single_assistant_tool_use_is_ok() {
+        let msg = json!({
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "t1", "name": "bash", "input": {}}]
+        });
+        assert!(validate_tool_pairing(&[msg]).is_none());
+    }
+
+    #[test]
+    fn test_truncate_does_not_split_tool_pair() {
+        let mut messages: Messages = vec![
+            json!({"role": "user", "content": "do task"}),
+            json!({
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "call_01", "name": "bash", "input": {"command": "ls"}}]
+            }),
+            json!({
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "call_01", "content": "file1"}]
+            }),
+            json!({
+                "role": "assistant",
+                "content": [{"type": "tool_use", "id": "call_02", "name": "bash", "input": {"command": "pwd"}}]
+            }),
+            json!({
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "call_02", "content": "/home"}]
+            }),
+        ];
+        truncate_messages(&mut messages, 1);
+        assert!(
+            validate_tool_pairing(&messages).is_none(),
+            "Should not split tool_use/tool_result pair"
+        );
+    }
+
+    #[test]
+    fn test_truncate_preserves_initial_user_prompt() {
+        let mut messages: Messages = vec![
+            json!({"role": "user", "content": "original task"}),
+            json!({"role": "assistant", "content": [{"type": "text", "text": "ok"}]}),
+            json!({"role": "user", "content": "reply 1"}),
+            json!({"role": "assistant", "content": [{"type": "text", "text": "ok2"}]}),
+            json!({"role": "user", "content": "reply 2"}),
+        ];
+        truncate_messages(&mut messages, 1);
+        assert_eq!(messages[0]["role"], "user");
+        assert_eq!(messages[0]["content"], "original task");
+    }
+
+    #[test]
+    fn multi_tool_use_some_matched() {
+        let tool_id_1 = "call_00_a";
+        let tool_id_2 = "call_00_b";
+        let messages: Vec<Json> = vec![
+            json!({"role": "user", "content": "do two things"}),
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": tool_id_1, "name": "bash", "input": {"command": "ls"}},
+                    {"type": "tool_use", "id": tool_id_2, "name": "bash", "input": {"command": "pwd"}}
+                ]
+            }),
+            json!({
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": tool_id_1, "content": "files"}
+                ]
+            }),
+        ];
+
+        let err = validate_tool_pairing(&messages);
+        assert!(
+            err.is_some(),
+            "Should detect missing tool_result for tool_id_2"
+        );
+    }
+
+    #[test]
+    fn multi_tool_use_all_matched() {
+        let tool_id_1 = "call_00_a";
+        let tool_id_2 = "call_00_b";
+        let messages: Vec<Json> = vec![
+            json!({"role": "user", "content": "do two things"}),
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": tool_id_1, "name": "bash", "input": {"command": "ls"}},
+                    {"type": "tool_use", "id": tool_id_2, "name": "bash", "input": {"command": "pwd"}}
+                ]
+            }),
+            json!({
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": tool_id_1, "content": "files"},
+                    {"type": "tool_result", "tool_use_id": tool_id_2, "content": "/home"}
+                ]
+            }),
+        ];
+
+        assert!(validate_tool_pairing(&messages).is_none());
+    }
+
+    #[test]
+    fn tool_result_out_of_order_is_actually_ok() {
+        let tool_id_1 = "call_00_a";
+        let tool_id_2 = "call_00_b";
+        let messages: Vec<Json> = vec![
+            json!({"role": "user", "content": "do two things"}),
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": tool_id_1, "name": "bash", "input": {"command": "ls"}},
+                    {"type": "tool_use", "id": tool_id_2, "name": "bash", "input": {"command": "pwd"}}
+                ]
+            }),
+            json!({
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": tool_id_2, "content": "/home"},
+                    {"type": "tool_result", "tool_use_id": tool_id_1, "content": "files"}
+                ]
+            }),
+        ];
+
+        let err = validate_tool_pairing(&messages);
+        assert!(
+            err.is_none(),
+            "Out-of-order results are accepted - validation checks ID matching only"
+        );
+    }
+
+    #[test]
+    fn mismatched_tool_use_id_fails() {
+        let tool_id_1 = "call_00_a";
+        let wrong_id = "call_99_wrong";
+        let messages: Vec<Json> = vec![
+            json!({"role": "user", "content": "do thing"}),
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": tool_id_1, "name": "bash", "input": {"command": "ls"}}
+                ]
+            }),
+            json!({
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": wrong_id, "content": "files"}
+                ]
+            }),
+        ];
+
+        let err = validate_tool_pairing(&messages);
+        assert!(err.is_some(), "Should detect mismatched tool_use_id");
+    }
+
+    #[test]
+    fn empty_content_array_is_ok() {
+        let messages: Vec<Json> = vec![
+            json!({"role": "user", "content": "hi"}),
+            json!({"role": "assistant", "content": []}),
+        ];
+
+        assert!(validate_tool_pairing(&messages).is_none());
+    }
+
+    #[test]
+    fn content_as_string_not_array_is_ok() {
+        let messages: Vec<Json> = vec![
+            json!({"role": "user", "content": "hi"}),
+            json!({"role": "assistant", "content": "Hello, how can I help?"}),
+        ];
+
+        assert!(validate_tool_pairing(&messages).is_none());
+    }
+
+    #[test]
+    fn assistant_with_only_text_is_ok() {
+        let messages: Vec<Json> = vec![
+            json!({"role": "user", "content": "hi"}),
+            json!({
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Hello!"}]
+            }),
+        ];
+
+        assert!(validate_tool_pairing(&messages).is_none());
+    }
+
+    #[test]
+    fn trailing_tool_use_is_ok() {
+        let messages: Vec<Json> = vec![
+            json!({"role": "user", "content": "do thing"}),
+            json!({
+                "role": "assistant",
+                "content": [
+                    {"type": "tool_use", "id": "call_00", "name": "bash", "input": {"command": "ls"}}
+                ]
+            }),
+        ];
+
+        let err = validate_tool_pairing(&messages);
+        assert!(
+            err.is_none(),
+            "Trailing tool_use at end is valid (no next message to validate)"
+        );
+    }
+
+    mod prop_tests {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn build_valid_history(pairs: &[u32]) -> Vec<Json> {
+            let mut msgs = vec![json!({"role": "user", "content": "start"})];
+            for (i, &seed) in pairs.iter().enumerate() {
+                let tool_id = format!("call_{:02}_{}", i, seed);
+                msgs.push(json!({
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "id": tool_id, "name": "bash", "input": {"command": "ls"}}
+                    ]
+                }));
+                msgs.push(json!({
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": tool_id, "content": "ok"}
+                    ]
+                }));
+            }
+            msgs
+        }
+
+        fn corrupt_random_tool_use_id(msgs: &mut Vec<Json>, idx: usize) {
+            if let Some(msg) = msgs.get_mut(idx) {
+                if let Some(blocks) = msg["content"].as_array_mut() {
+                    if let Some(block) = blocks.first_mut() {
+                        if block["type"] == "tool_use" {
+                            block["id"] = json!("corrupted_id");
+                        }
+                    }
+                }
+            }
+        }
+
+        proptest! {
+            #[test]
+            fn random_valid_history_passes(pairs in proptest::collection::vec(any::<u32>(), 0..10)) {
+                let msgs = build_valid_history(&pairs);
+                prop_assert!(validate_tool_pairing(&msgs).is_none());
+            }
+
+            #[test]
+            fn corrupting_tool_use_id_is_caught(pairs in proptest::collection::vec(any::<u32>(), 1..10)) {
+                let mut msgs = build_valid_history(&pairs);
+                if msgs.len() > 1 {
+                    corrupt_random_tool_use_id(&mut msgs, 1);
+                    prop_assert!(validate_tool_pairing(&msgs).is_some());
+                }
+            }
+        }
     }
 }

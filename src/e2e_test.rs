@@ -1,4 +1,4 @@
-use crate::agent_loop::{agent_loop, Messages};
+use crate::agent_loop::{agent_loop, extract_final_text, Messages};
 use crate::llm_client::AnthropicClient;
 use crate::logger::SessionLogger;
 use crate::todo_manager::TodoManager;
@@ -53,25 +53,6 @@ pub fn get_git_commit() -> String {
 
 pub fn get_test_timestamp() -> String {
     Local::now().format("%Y%m%d_%H%M%S").to_string()
-}
-
-fn extract_final_text(messages: &[Json]) -> String {
-    let mut text = String::new();
-    if let Some(last) = messages.last() {
-        if let Some(blocks) = last["content"].as_array() {
-            for block in blocks {
-                if block["type"] == "text" {
-                    if let Some(t) = block["text"].as_str() {
-                        if !text.is_empty() {
-                            text.push('\n');
-                        }
-                        text.push_str(t);
-                    }
-                }
-            }
-        }
-    }
-    text
 }
 
 /// Extract all text from every message in the conversation,

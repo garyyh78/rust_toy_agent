@@ -170,6 +170,7 @@ impl SkillLoader {
 }
 
 /// Skill loading agent with tools
+#[allow(dead_code)]
 pub struct SkillAgent {
     client: AnthropicClient,
     workdir: String,
@@ -197,6 +198,7 @@ impl SkillAgent {
         }
     }
 
+    #[allow(dead_code)]
     /// Dispatch a tool call
     fn dispatch_tool(&self, tool_name: &str, input: &Json) -> String {
         let workdir = Path::new(&self.workdir);
@@ -241,7 +243,6 @@ impl SkillAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
     use std::fs;
 
     #[test]
@@ -275,11 +276,10 @@ mod tests {
 
     #[test]
     fn test_skill_loader_with_skills() {
-        let temp_dir = env::temp_dir();
-        let skills_dir = temp_dir.join("test_skills");
+        let tmp = tempfile::TempDir::new().unwrap();
+        let skills_dir = tmp.path().join("test_skills");
         let skill_dir = skills_dir.join("test_skill");
 
-        // Create skill directory and file
         let _ = fs::create_dir_all(&skill_dir);
         let skill_content = "---\nname: test\n\ndescription: Test skill\n---\nSkill body";
         let _ = fs::write(skill_dir.join("SKILL.md"), skill_content);
@@ -299,9 +299,6 @@ mod tests {
 
         let unknown = loader.get_content("unknown");
         assert!(unknown.contains("Error: Unknown skill"));
-
-        // Cleanup
-        let _ = fs::remove_dir_all(skills_dir);
     }
 
     #[test]

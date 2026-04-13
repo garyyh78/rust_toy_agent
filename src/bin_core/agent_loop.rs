@@ -1,18 +1,32 @@
-use crate::bin_core::constants::{ LEAD, MAX_TOKENS, NAG_THRESHOLD, TOKEN_THRESHOLD};
+use crate::bin_core::constants::LEAD;
 use crate::bin_core::dispatch::dispatch_tool;
 use crate::bin_core::state::State;
+use crate::config::{LEAD_MAX_TOKENS, NAG_THRESHOLD, TOKEN_THRESHOLD};
+use crate::context_compact::ContextCompactor;
+use crate::metrics::{self, RoundMetrics};
 use serde_json::Value as Json;
+use std::path::PathBuf;
+use std::time::Instant;
 
 /// Main agent loop that orchestrates LLM calls and tool execution.
-pub async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
+pub async fn agent_loop(
+    state: &State,
+    messages: &mut Vec<Json>,
+    system: &str,
+    metrics_out: Option<&PathBuf>,
+    session_id: &str,
+) {
     let tools = state.tools();
     let mut rounds_since_todo = 0usize;
+    let mut round: u32 = 0;
 
     loop {
+        let start = Instant::now();
+
         // Context compression
         state.compactor.micro_compact(messages);
         if ContextCompactor::estimate_tokens(messages) > TOKEN_THRESHOLD {
-            eprintln!("[auto-compact triggered]");
+            tracing::info!("triggering auto-compact");
             *messages = state.compactor.auto_compact(messages).await;
         }
 
@@ -53,13 +67,13 @@ pub async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
                 Some(system),
                 messages,
                 Some(&tools),
-                MAX_TOKENS,
+                LEAD_MAX_TOKENS,
             )
             .await
         {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("Error: {e}");
+                tracing::error!(error = %e, "LLM call failed");
                 return;
             }
         };
@@ -77,10 +91,12 @@ pub async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
         let mut results: Vec<Json> = Vec::new();
         let mut used_todo = false;
         let mut manual_compact = false;
+        let mut tool_calls: u32 = 0;
 
         if let Some(content) = response["content"].as_array() {
             for block in content {
                 if block["type"] == "tool_use" {
+                    tool_calls += 1;
                     let tool_name = block["name"].as_str().unwrap_or("");
                     let input = &block["input"];
 
@@ -90,13 +106,12 @@ pub async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
 
                     let output = dispatch_tool(state, tool_name, input);
 
-                    eprintln!("> {tool_name}:");
                     let preview = if output.chars().count() > 200 {
                         format!("{}...", output.chars().take(200).collect::<String>())
                     } else {
                         output.clone()
                     };
-                    eprintln!("{preview}");
+                    tracing::info!(tool = %tool_name, output = %preview, "tool completed");
 
                     results.push(serde_json::json!({
                         "type": "tool_result",
@@ -118,7 +133,13 @@ pub async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
             rounds_since_todo += 1;
         }
         let has_open = {
-            let todo = state.todo.lock().unwrap();
+            let todo = match state.todo.lock() {
+                Ok(t) => t,
+                Err(e) => {
+                    tracing::error!(error = %e, "lock poisoned");
+                    return;
+                }
+            };
             todo.items().iter().any(|t| t.status != "completed")
         };
         if has_open && rounds_since_todo >= NAG_THRESHOLD {
@@ -135,12 +156,36 @@ pub async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
 
         // Manual compact
         if manual_compact {
-            eprintln!("[manual compact]");
+            tracing::info!("triggering manual compact");
             *messages = state.compactor.auto_compact(messages).await;
             return;
         }
+
+        // Emit metrics
+        if let Some(path) = metrics_out {
+            round += 1;
+            let input_tokens = response["usage"]
+                .get("input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32;
+            let output_tokens = response["usage"]
+                .get("output_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as u32;
+            let wall_ms = start.elapsed().as_millis() as u64;
+
+            let m = RoundMetrics {
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                session_id: session_id.to_string(),
+                round,
+                input_tokens,
+                output_tokens,
+                wall_ms,
+                tool_calls,
+                retries: 0,
+                host: "lead",
+            };
+            let _ = metrics::emit(path, &m);
+        }
     }
 }
-
-// Re-export for use in this module
-use crate::context_compact::ContextCompactor;

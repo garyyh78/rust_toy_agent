@@ -1,3 +1,4 @@
+use crate::config::SUMMARIZE_MAX_TOKENS;
 use crate::llm_client::AnthropicClient;
 use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
 use crate::tools::compactor_tools;
@@ -15,16 +16,11 @@ const TOOL_RESULT_PREVIEW_LEN: usize = 100;
 /// Maximum conversation size before forced truncation.
 const MAX_CONVERSATION_SIZE: usize = 80_000;
 
-/// Max tokens for the summarization subagent call.
-const SUMMARIZE_MAX_TOKENS: u32 = 2_000;
-
-/// Max tokens for the compactor's context compaction call.
-const COMPACTOR_MAX_TOKENS: u32 = 8_000;
-
 /// Three-layer compression pipeline for context management.
 /// Layer 1: micro_compact - replace old tool results with placeholders
 /// Layer 2: auto_compact - save transcript, summarize, replace messages
 /// Layer 3: manual_compact - triggered by compact tool
+#[allow(dead_code)]
 pub struct ContextCompactor {
     client: AnthropicClient,
     workdir: String,
@@ -123,24 +119,29 @@ impl ContextCompactor {
 
     /// Layer 2: auto_compact - save transcript, summarize, replace messages (async)
     pub async fn auto_compact(&self, messages: &[Json]) -> Vec<Json> {
-        // Save full transcript to disk
-        let _ = std::fs::create_dir_all(&self.transcript_dir);
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let transcript_path = format!("{}/transcript_{}.jsonl", self.transcript_dir, timestamp);
+        let transcript_path = format!(
+            "{}/transcript_{}.jsonl",
+            self.transcript_dir,
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        );
 
-        if let Ok(mut file) = std::fs::File::create(&transcript_path) {
+        if let Err(e) = std::fs::create_dir_all(&self.transcript_dir) {
+            tracing::error!(error = %e, "failed to create transcript dir");
+        } else if let Ok(mut file) = std::fs::File::create(&transcript_path) {
             for msg in messages {
                 if let Ok(json) = serde_json::to_string(msg) {
                     use std::io::Write;
-                    let _ = writeln!(file, "{}", json);
+                    if let Err(e) = writeln!(file, "{}", json) {
+                        tracing::error!(error = %e, "failed to write transcript");
+                    }
                 }
             }
         }
 
-        println!("[transcript saved: {}]", transcript_path);
+        tracing::info!(path = %transcript_path, "transcript saved");
 
         // Prepare conversation for summarization
         let conversation_text = serde_json::to_string(messages).unwrap_or_default();
@@ -195,6 +196,7 @@ impl ContextCompactor {
         ]
     }
 
+    #[allow(dead_code)]
     /// Dispatch a tool call
     fn dispatch_tool(&self, tool_name: &str, input: &Json) -> String {
         let workdir = Path::new(&self.workdir);

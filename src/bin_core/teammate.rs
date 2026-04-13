@@ -1,7 +1,7 @@
-use crate::bin_core::constants::{
-    IDLE_TIMEOUT, POLL_INTERVAL, TEAMMATE_MAX_ROUNDS, TEAMMATE_MAX_TOKENS,
-};
 use crate::agent_teams::{MessageBus, TeammateManager};
+use crate::config::{
+    IDLE_TIMEOUT_SECS, POLL_INTERVAL_SECS, TEAMMATE_MAX_ROUNDS, TEAMMATE_MAX_TOKENS,
+};
 use crate::context_compact::ContextCompactor;
 use crate::llm_client::AnthropicClient;
 use crate::task_system::TaskManager;
@@ -145,7 +145,7 @@ pub fn teammate_loop(
                     } else {
                         output.clone()
                     };
-                    eprintln!("  [{name}] {tool_name}: {preview}");
+                    tracing::info!(name = %name, tool = %tool_name, output = %preview, "teammate tool");
                     results.push(serde_json::json!({
                         "type": "tool_result",
                         "tool_use_id": block["id"],
@@ -172,11 +172,11 @@ pub fn teammate_loop(
     };
     team.set_status(name, "idle");
 
-    let idle_polls = (IDLE_TIMEOUT / POLL_INTERVAL.max(1)) as usize;
+    let idle_polls = (IDLE_TIMEOUT_SECS / POLL_INTERVAL_SECS.max(1)) as usize;
     let mut resume = false;
 
     for _ in 0..idle_polls {
-        thread::sleep(Duration::from_secs(POLL_INTERVAL));
+        thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
 
         let inbox = bus.read_inbox(name);
         if !inbox.is_empty() {

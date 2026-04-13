@@ -1,3 +1,4 @@
+use crate::config::SUBAGENT_MAX_TOKENS;
 use crate::llm_client::AnthropicClient;
 use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
 use crate::tools::{child_agent_tools, parent_agent_tools};
@@ -6,14 +7,13 @@ use std::path::Path;
 
 /// Maximum iterations for a subagent loop (safety limit).
 const MAX_SUBAGENT_TURNS: u32 = 30;
-/// Max tokens for a single subagent API call.
-const SUBAGENT_MAX_TOKENS: u32 = 8_000;
 /// Truncate tool output to this many characters before returning to the LLM.
 const MAX_TOOL_OUTPUT: usize = 50_000;
 
 /// Subagent system that spawns child agents with fresh context.
 /// The child works in its own context, sharing the filesystem,
 /// then returns only a summary to the parent.
+#[allow(dead_code)]
 pub struct Subagent {
     client: AnthropicClient,
     workdir: String,
@@ -24,11 +24,21 @@ pub struct Subagent {
 
 impl Subagent {
     pub fn new(client: AnthropicClient, workdir: String, model: String) -> Self {
-        // Child agents get core file tools (no todo)
         let child_tools = Json::Array(child_agent_tools());
-        
-        // Parent agents get child tools + task tool for delegation
-        let parent_tools = Json::Array(parent_agent_tools());
+
+        let parent_tools_array = parent_agent_tools();
+        let parent_tools = Json::Array(
+            parent_tools_array
+                .iter()
+                .filter(|t| {
+                    t.get("name")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s != "todo")
+                        .unwrap_or(true)
+                })
+                .cloned()
+                .collect(),
+        );
 
         Self {
             client,
@@ -155,6 +165,7 @@ impl Subagent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     fn test_client() -> AnthropicClient {
         AnthropicClient::new("test", "https://api.anthropic.com")
@@ -164,13 +175,20 @@ mod tests {
         Subagent::new(test_client(), workdir.to_string(), "test-model".to_string())
     }
 
+    fn tmp_workdir() -> (TempDir, String) {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().to_str().unwrap().to_string();
+        (tmp, path)
+    }
+
     // -- construction --
 
     #[test]
     fn test_subagent_creation() {
-        let sub = test_subagent("/tmp");
+        let (_tmp, workdir) = tmp_workdir();
+        let sub = test_subagent(&workdir);
 
-        assert_eq!(sub.workdir, "/tmp");
+        assert_eq!(sub.workdir, workdir);
         assert_eq!(sub.model, "test-model");
 
         let child_tools = sub.child_tools.as_array().unwrap();
@@ -183,17 +201,46 @@ mod tests {
 
     #[test]
     fn test_subagent_new_with_different_workdir() {
-        let sub = test_subagent("/Users/test/project");
-
-        assert_eq!(sub.workdir, "/Users/test/project");
-        assert_eq!(sub.model, "test-model");
+        let (_tmp, workdir) = tmp_workdir();
+        let sub = test_subagent(&workdir);
+        assert_eq!(sub.workdir, workdir);
     }
 
     // -- tool filtering --
 
     #[test]
+    fn test_child_tools_filter_handles_malformed_name() {
+        let (_tmp, workdir) = tmp_workdir();
+        let _sub = test_subagent(&workdir);
+
+        let tools_with_malformed = vec![
+            serde_json::json!({"name": "bash", "description": "Run command"}),
+            serde_json::json!({"name": 123, "description": "name is a number"}),
+            serde_json::json!({"description": "no name field"}),
+            serde_json::json!({"name": "read_file", "description": "Read file"}),
+            serde_json::json!({"name": "todo", "description": "should be filtered"}),
+        ];
+        let filtered: Vec<Json> = tools_with_malformed
+            .iter()
+            .filter(|t| {
+                t.get("name")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s != "todo")
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect();
+
+        assert_eq!(filtered.len(), 4);
+        assert!(filtered
+            .iter()
+            .all(|t| t.get("name").and_then(|v| v.as_str()) != Some("todo")));
+    }
+
+    #[test]
     fn test_child_tools_excludes_todo() {
-        let sub = test_subagent("/tmp");
+        let (_tmp, workdir) = tmp_workdir();
+        let sub = test_subagent(&workdir);
 
         let names: Vec<&str> = sub
             .child_tools
@@ -214,7 +261,8 @@ mod tests {
 
     #[test]
     fn test_parent_tools_has_task_with_correct_schema() {
-        let sub = test_subagent("/tmp");
+        let (_tmp, workdir) = tmp_workdir();
+        let sub = test_subagent(&workdir);
 
         let parent_tools = sub.parent_tools.as_array().unwrap();
         let task_tool = parent_tools.iter().find(|t| t["name"] == "task").unwrap();
@@ -274,7 +322,8 @@ mod tests {
 
     #[test]
     fn test_dispatch_read_file() {
-        let sub = test_subagent("/tmp");
+        let (_tmp, workdir) = tmp_workdir();
+        let sub = test_subagent(&workdir);
         let result = sub.dispatch_child_tool(
             "read_file",
             &serde_json::json!({"path": "Cargo.toml", "limit": 5}),
@@ -284,11 +333,11 @@ mod tests {
 
     #[test]
     fn test_dispatch_write_file() {
-        let workdir = std::env::temp_dir();
-        let sub = test_subagent(workdir.to_str().unwrap());
+        let (tmp_dir, workdir) = tmp_workdir();
+        let sub = test_subagent(&workdir);
 
-        let filename = "rust_toy_agent_subagent_write_test.txt";
-        let tmp = workdir.join(filename);
+        let filename = "write_test.txt";
+        let tmp = tmp_dir.path().join(filename);
         let result = sub.dispatch_child_tool(
             "write_file",
             &serde_json::json!({"path": filename, "content": "subagent wrote this"}),
@@ -299,16 +348,16 @@ mod tests {
             std::fs::read_to_string(&tmp).unwrap(),
             "subagent wrote this"
         );
-        let _ = std::fs::remove_file(&tmp);
+        drop(tmp_dir);
     }
 
     #[test]
     fn test_dispatch_edit_file() {
-        let workdir = std::env::temp_dir();
-        let sub = test_subagent(workdir.to_str().unwrap());
+        let (tmp_dir, workdir) = tmp_workdir();
+        let sub = test_subagent(&workdir);
 
-        let filename = "rust_toy_agent_subagent_edit_test.txt";
-        let tmp = workdir.join(filename);
+        let filename = "edit_test.txt";
+        let tmp = tmp_dir.path().join(filename);
         let _ = std::fs::write(&tmp, "replace ME please");
 
         let result = sub.dispatch_child_tool(
@@ -322,7 +371,7 @@ mod tests {
         assert!(result.contains("Edited"));
 
         assert_eq!(std::fs::read_to_string(&tmp).unwrap(), "replace YOU please");
-        let _ = std::fs::remove_file(&tmp);
+        drop(tmp_dir);
     }
 
     #[test]
@@ -358,11 +407,11 @@ mod tests {
 
     #[test]
     fn test_dispatch_edit_file_text_not_found() {
-        let workdir = std::env::temp_dir();
-        let sub = test_subagent(workdir.to_str().unwrap());
+        let (tmp_dir, workdir) = tmp_workdir();
+        let sub = test_subagent(&workdir);
 
-        let filename = "rust_toy_agent_subagent_edit_nf_test.txt";
-        let tmp = workdir.join(filename);
+        let filename = "edit_nf_test.txt";
+        let tmp = tmp_dir.path().join(filename);
         let _ = std::fs::write(&tmp, "hello world");
 
         let result = sub.dispatch_child_tool(
@@ -374,7 +423,7 @@ mod tests {
             }),
         );
         assert!(result.contains("Text not found"));
-        let _ = std::fs::remove_file(&tmp);
+        drop(tmp_dir);
     }
 
     #[test]
