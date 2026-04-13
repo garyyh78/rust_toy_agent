@@ -212,11 +212,6 @@ pub fn load_test_case(path: &Path) -> Result<TestCase, String> {
     })
 }
 
-pub fn load_test_from_dir(dir_path: &Path) -> Result<TestCase, String> {
-    let test_file = dir_path.join("test.json");
-    load_test_case(&test_file)
-}
-
 pub fn print_test_result(result: &TestResult) {
     println!();
     println!("═══════════════════════════════════════════════════════════════");

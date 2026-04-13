@@ -1,5 +1,10 @@
 //! Constants for the binary
 
+/// Canonical identity string for the top-level agent.
+/// Used as both the default recipient for teammate messages
+/// and the default owner field on tasks.
+pub const LEAD: &str = "lead";
+
 /// Token threshold for triggering auto-compaction.
 pub const TOKEN_THRESHOLD: usize = 100_000;
 
@@ -26,3 +31,13 @@ pub const TEAMMATE_MAX_ROUNDS: u32 = 30;
 
 /// Maximum tokens for teammate LLM calls.
 pub const TEAMMATE_MAX_TOKENS: u32 = 8_000;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lead_constant_is_lowercase() {
+        assert_eq!(LEAD, "lead");
+    }
+}

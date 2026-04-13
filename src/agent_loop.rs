@@ -31,6 +31,7 @@
 //!     7. append results  → (repeat until stop_reason != "tool_use")
 //!   }
 
+use crate::config::LEAD_MAX_TOKENS;
 use crate::llm_client::AnthropicClient;
 use crate::logger::SessionLogger;
 use crate::todo_manager::TodoManager;
@@ -44,8 +45,6 @@ use std::sync::{Arc, Mutex};
 // Each iteration: call LLM, collect tool_use blocks, dispatch them,
 // and append tool_result blocks back into the conversation.
 // The "nag" counter injects a reminder if the LLM forgets its todos.
-
-const MAX_TOKENS: u32 = 16 * 1024;
 
 /// The conversation history is a vector of JSON message objects.
 pub type Messages = Vec<Json>;
@@ -114,10 +113,10 @@ async fn call_llm(
     logger.log_step("→", &format!("Calling Agent Model ({model})..."));
 
     let body =
-        AnthropicClient::build_request_body(model, Some(system), messages, Some(tools), MAX_TOKENS);
+        AnthropicClient::build_request_body(model, Some(system), messages, Some(tools), LEAD_MAX_TOKENS);
     let body_len = serde_json::to_string(&body).unwrap_or_default().len();
     logger.log_info("request_size", &format!("{body_len} bytes"));
-    logger.log_info("max_tokens", &MAX_TOKENS.to_string());
+    logger.log_info("max_tokens", &LEAD_MAX_TOKENS.to_string());
     logger.log_api_request(&body);
 
     match client.send_body(&body).await {

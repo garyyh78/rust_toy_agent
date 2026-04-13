@@ -1,4 +1,5 @@
 use crate::bin_core::agent_loop::agent_loop;
+use crate::bin_core::constants::LEAD;
 use crate::bin_core::state::State;
 use serde_json::Value as Json;
 use std::io::{BufRead, Write};
@@ -103,7 +104,7 @@ pub async fn run_repl(state: State) {
                 continue;
             }
             "/inbox" => {
-                let msgs = state.bus.read_inbox("lead");
+                let msgs = state.bus.read_inbox(LEAD);
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&msgs).unwrap_or_default()

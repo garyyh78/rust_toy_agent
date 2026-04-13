@@ -1,4 +1,5 @@
 use crate::background_tasks::BackgroundManager;
+use crate::bin_core::constants::LEAD;
 use crate::bin_core::state::State;
 use crate::llm_client::AnthropicClient;
 use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
@@ -147,13 +148,13 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             let to = input["to"].as_str().unwrap_or("");
             let content = input["content"].as_str().unwrap_or("");
             let msg_type = input["msg_type"].as_str().unwrap_or("message");
-            match state.bus.send("lead", to, content, msg_type) {
+            match state.bus.send(LEAD, to, content, msg_type) {
                 Ok(r) => r,
                 Err(e) => format!("Error: {e}"),
             }
         }
         "read_inbox" => {
-            let msgs = state.bus.read_inbox("lead");
+            let msgs = state.bus.read_inbox(LEAD);
             serde_json::to_string_pretty(&msgs).unwrap_or_default()
         }
         "broadcast" => {
@@ -161,7 +162,7 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             let names = team.member_names();
             match state
                 .bus
-                .broadcast("lead", input["content"].as_str().unwrap_or(""), &names)
+                .broadcast(LEAD, input["content"].as_str().unwrap_or(""), &names)
             {
                 Ok(r) => r,
                 Err(e) => format!("Error: {e}"),
@@ -172,7 +173,7 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             let req_id = state.protocols.create_shutdown_request(teammate);
             let _ = state
                 .bus
-                .send("lead", teammate, "Please shut down.", "shutdown_request");
+                .send(LEAD, teammate, "Please shut down.", "shutdown_request");
             format!("Shutdown request {req_id} sent to '{teammate}'")
         }
         "plan_approval" => {

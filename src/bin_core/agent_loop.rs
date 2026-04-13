@@ -1,4 +1,4 @@
-use crate::bin_core::constants::{MAX_TOKENS, NAG_THRESHOLD, TOKEN_THRESHOLD};
+use crate::bin_core::constants::{ LEAD, MAX_TOKENS, NAG_THRESHOLD, TOKEN_THRESHOLD};
 use crate::bin_core::dispatch::dispatch_tool;
 use crate::bin_core::state::State;
 use serde_json::Value as Json;
@@ -37,7 +37,7 @@ pub async fn agent_loop(state: &State, messages: &mut Vec<Json>, system: &str) {
         }
 
         // Check lead inbox
-        let inbox = state.bus.read_inbox("lead");
+        let inbox = state.bus.read_inbox(LEAD);
         if !inbox.is_empty() {
             messages.push(serde_json::json!({
                 "role": "user",
