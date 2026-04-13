@@ -1,6 +1,6 @@
 use crate::llm_client::AnthropicClient;
 use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
-use crate::tools::TOOLS;
+use crate::tools::{child_agent_tools, parent_agent_tools};
 use serde_json::Value as Json;
 use std::path::Path;
 
@@ -24,38 +24,18 @@ pub struct Subagent {
 
 impl Subagent {
     pub fn new(client: AnthropicClient, workdir: String, model: String) -> Self {
-        let all_tools: Json = serde_json::from_str(TOOLS).unwrap();
-
-        // Child agents get all tools except todo (no need for task tracking)
-        let child_tools: Vec<Json> = all_tools
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|t| t["name"] != "todo")
-            .cloned()
-            .collect();
-
+        // Child agents get core file tools (no todo)
+        let child_tools = Json::Array(child_agent_tools());
+        
         // Parent agents get child tools + task tool for delegation
-        let mut parent_tools = child_tools.clone();
-        parent_tools.push(serde_json::json!({
-            "name": "task",
-            "description": "Spawn a subagent with fresh context. It shares the filesystem but not conversation history.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "prompt": {"type": "string"},
-                    "description": {"type": "string", "description": "Short description of the task"}
-                },
-                "required": ["prompt"]
-            }
-        }));
+        let parent_tools = Json::Array(parent_agent_tools());
 
         Self {
             client,
             workdir,
             model,
-            child_tools: serde_json::Value::Array(child_tools),
-            parent_tools: serde_json::Value::Array(parent_tools),
+            child_tools,
+            parent_tools,
         }
     }
 
@@ -169,78 +149,6 @@ impl Subagent {
         }
 
         Self::extract_summary(&messages)
-    }
-
-    /// Main agent loop with parent tools (async).
-    pub async fn agent_loop(&self, messages: &mut Vec<Json>) {
-        let system = format!(
-            "You are a coding agent at {}. Use the task tool to delegate exploration or subtasks.",
-            self.workdir
-        );
-
-        loop {
-            let response = match self
-                .client
-                .create_message(
-                    &self.model,
-                    Some(&system),
-                    messages,
-                    Some(&self.parent_tools),
-                    SUBAGENT_MAX_TOKENS,
-                )
-                .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    println!("Error: {e}");
-                    return;
-                }
-            };
-
-            messages.push(serde_json::json!({
-                "role": "assistant",
-                "content": response["content"]
-            }));
-
-            if response["stop_reason"] != "tool_use" {
-                return;
-            }
-
-            let mut results = Vec::new();
-            if let Some(content) = response["content"].as_array() {
-                for block in content {
-                    if block["type"] != "tool_use" {
-                        continue;
-                    }
-                    let tool_name = block["name"].as_str().unwrap_or("");
-                    let input = &block["input"];
-
-                    let output = if tool_name == "task" {
-                        let desc = input["description"].as_str().unwrap_or("subtask");
-                        let prompt = input["prompt"].as_str().unwrap_or("");
-                        let preview = &prompt[..std::cmp::min(80, prompt.len())];
-                        println!("> task ({desc}): {preview}");
-                        self.run_subagent(prompt).await
-                    } else {
-                        self.dispatch_child_tool(tool_name, input)
-                    };
-
-                    let preview = &output[..std::cmp::min(200, output.len())];
-                    println!("  {preview}");
-
-                    results.push(serde_json::json!({
-                        "type": "tool_result",
-                        "tool_use_id": block["id"],
-                        "content": output
-                    }));
-                }
-            }
-
-            messages.push(serde_json::json!({
-                "role": "user",
-                "content": results
-            }));
-        }
     }
 }
 

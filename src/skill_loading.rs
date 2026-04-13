@@ -1,5 +1,6 @@
 use crate::llm_client::AnthropicClient;
 use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
+use crate::tools::skill_agent_tools;
 use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::path::Path;
@@ -185,66 +186,7 @@ impl SkillAgent {
         skills_dir: String,
     ) -> Self {
         let skill_loader = SkillLoader::new(&skills_dir);
-
-        let tools = serde_json::json!([
-            {
-                "name": "bash",
-                "description": "Run a shell command.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {"command": {"type": "string"}},
-                    "required": ["command"]
-                }
-            },
-            {
-                "name": "read_file",
-                "description": "Read file contents.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string"},
-                        "limit": {"type": "integer"}
-                    },
-                    "required": ["path"]
-                }
-            },
-            {
-                "name": "write_file",
-                "description": "Write content to file.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string"},
-                        "content": {"type": "string"}
-                    },
-                    "required": ["path", "content"]
-                }
-            },
-            {
-                "name": "edit_file",
-                "description": "Replace exact text in file.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string"},
-                        "old_text": {"type": "string"},
-                        "new_text": {"type": "string"}
-                    },
-                    "required": ["path", "old_text", "new_text"]
-                }
-            },
-            {
-                "name": "load_skill",
-                "description": "Load specialized knowledge by name.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Skill name to load"}
-                    },
-                    "required": ["name"]
-                }
-            }
-        ]);
+        let tools = Json::Array(skill_agent_tools());
 
         Self {
             client,
@@ -293,70 +235,6 @@ impl SkillAgent {
             self.workdir,
             self.skill_loader.get_descriptions()
         )
-    }
-
-    /// Main agent loop (async)
-    pub async fn agent_loop(&self, messages: &mut Vec<Json>) {
-        let system = self.get_system_prompt();
-
-        loop {
-            let response = self
-                .client
-                .create_message(
-                    &self.model,
-                    Some(&system),
-                    messages,
-                    Some(&self.tools),
-                    8000,
-                )
-                .await;
-
-            let response = match response {
-                Ok(r) => r,
-                Err(e) => {
-                    println!("Error: {}", e);
-                    return;
-                }
-            };
-
-            messages.push(serde_json::json!({
-                "role": "assistant",
-                "content": response["content"]
-            }));
-
-            if response["stop_reason"] != "tool_use" {
-                return;
-            }
-
-            let mut results = Vec::new();
-            if let Some(content) = response["content"].as_array() {
-                for block in content {
-                    if block["type"] == "tool_use" {
-                        let tool_name = block["name"].as_str().unwrap_or("");
-                        let input = &block["input"];
-
-                        let output = self.dispatch_tool(tool_name, input);
-
-                        println!(
-                            "> {}: {}",
-                            tool_name,
-                            &output[..std::cmp::min(200, output.len())]
-                        );
-
-                        results.push(serde_json::json!({
-                            "type": "tool_result",
-                            "tool_use_id": block["id"],
-                            "content": output
-                        }));
-                    }
-                }
-            }
-
-            messages.push(serde_json::json!({
-                "role": "user",
-                "content": results
-            }));
-        }
     }
 }
 

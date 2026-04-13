@@ -2,6 +2,7 @@ pub mod agent_loop;
 pub mod agent_teams;
 pub mod autonomous_agents;
 pub mod background_tasks;
+pub mod bin_core;
 pub mod context_compact;
 pub mod e2e_test;
 pub mod llm_client;

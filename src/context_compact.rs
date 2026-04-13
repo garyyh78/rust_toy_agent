@@ -1,5 +1,6 @@
 use crate::llm_client::AnthropicClient;
 use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
+use crate::tools::compactor_tools;
 use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::path::Path;
@@ -36,64 +37,7 @@ pub struct ContextCompactor {
 
 impl ContextCompactor {
     pub fn new(client: AnthropicClient, workdir: String, model: String) -> Self {
-        let tools = serde_json::json!([
-            {
-                "name": "bash",
-                "description": "Run a shell command.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {"command": {"type": "string"}},
-                    "required": ["command"]
-                }
-            },
-            {
-                "name": "read_file",
-                "description": "Read file contents.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string"},
-                        "limit": {"type": "integer"}
-                    },
-                    "required": ["path"]
-                }
-            },
-            {
-                "name": "write_file",
-                "description": "Write content to file.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string"},
-                        "content": {"type": "string"}
-                    },
-                    "required": ["path", "content"]
-                }
-            },
-            {
-                "name": "edit_file",
-                "description": "Replace exact text in file.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string"},
-                        "old_text": {"type": "string"},
-                        "new_text": {"type": "string"}
-                    },
-                    "required": ["path", "old_text", "new_text"]
-                }
-            },
-            {
-                "name": "compact",
-                "description": "Trigger manual conversation compression.",
-                "input_schema": {
-                    "type": "object",
-                    "properties": {
-                        "focus": {"type": "string", "description": "What to preserve in the summary"}
-                    }
-                }
-            }
-        ]);
+        let tools = Json::Array(compactor_tools());
 
         Self {
             client,
@@ -274,95 +218,6 @@ impl ContextCompactor {
             ),
             "compact" => "Manual compression requested.".to_string(),
             _ => format!("Unknown tool: {}", tool_name),
-        }
-    }
-
-    /// Main agent loop with context compression (async)
-    pub async fn agent_loop(&self, messages: &mut Vec<Json>) {
-        let system = format!(
-            "You are a coding agent at {}. Use tools to solve tasks.",
-            self.workdir
-        );
-
-        loop {
-            // Layer 1: micro_compact before each LLM call
-            self.micro_compact(messages);
-
-            // Layer 2: auto_compact if token estimate exceeds threshold
-            if Self::estimate_tokens(messages) > self.threshold {
-                println!("[auto_compact triggered]");
-                *messages = self.auto_compact(messages).await;
-            }
-
-            let response = self
-                .client
-                .create_message(
-                    &self.model,
-                    Some(&system),
-                    messages,
-                    Some(&self.tools),
-                    COMPACTOR_MAX_TOKENS,
-                )
-                .await;
-
-            let response = match response {
-                Ok(r) => r,
-                Err(e) => {
-                    println!("Error: {}", e);
-                    return;
-                }
-            };
-
-            messages.push(serde_json::json!({
-                "role": "assistant",
-                "content": response["content"]
-            }));
-
-            if response["stop_reason"] != "tool_use" {
-                return;
-            }
-
-            let mut results = Vec::new();
-            let mut manual_compact = false;
-
-            if let Some(content) = response["content"].as_array() {
-                for block in content {
-                    if block["type"] == "tool_use" {
-                        let tool_name = block["name"].as_str().unwrap_or("");
-                        let input = &block["input"];
-
-                        let output = if tool_name == "compact" {
-                            manual_compact = true;
-                            "Compressing...".to_string()
-                        } else {
-                            self.dispatch_tool(tool_name, input)
-                        };
-
-                        println!(
-                            "> {}: {}",
-                            tool_name,
-                            &output[..std::cmp::min(200, output.len())]
-                        );
-
-                        results.push(serde_json::json!({
-                            "type": "tool_result",
-                            "tool_use_id": block["id"],
-                            "content": output
-                        }));
-                    }
-                }
-            }
-
-            messages.push(serde_json::json!({
-                "role": "user",
-                "content": results
-            }));
-
-            // Layer 3: manual compact triggered by the compact tool
-            if manual_compact {
-                println!("[manual compact]");
-                *messages = self.auto_compact(messages).await;
-            }
         }
     }
 }
