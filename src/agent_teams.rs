@@ -1,7 +1,7 @@
 //! agent_teams.rs - Agent Teams with persistent named teammates
 //!
 //! Persistent named agents with per-member inboxes. Each teammate runs
-//! its own agent loop in a separate thread. Communication via crossbeam channels.
+//! its own agent loop in a separate thread. Communication via std::sync channels.
 //!
 //! ```text
 //!     TeammateManager
@@ -11,7 +11,7 @@
 //!     │      {"name":"alice", "role":"coder", "status":"idle"}
 //!     │    ]}
 //!     │
-//!     ├── MessageBus (crossbeam-channel bounded MPMC)
+//!     ├── MessageBus
 //!     │   ├── send(sender, to, content, msg_type)  -> "Sent message to alice"
 //!     │   ├── read_inbox(name)                      -> Vec<Message>
 //!     │   └── broadcast(sender, content, teammates)  -> "Broadcast to N"
@@ -70,9 +70,6 @@ impl Message {
 /// MessageBus: thread-safe inbox per teammate.
 ///
 /// Uses Arc<RwLock<HashMap>> for shared mutable state across threads.
-/// In production, crossbeam-channel bounded MPMC channels could be used
-/// for non-blocking send/receive, but the shared map approach is simpler
-/// and sufficient for this implementation.
 pub struct MessageBus {
     /// Accumulated inbox per member name.
     inbox: Arc<RwLock<HashMap<String, Vec<Message>>>>,

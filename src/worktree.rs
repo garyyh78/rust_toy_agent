@@ -636,7 +636,7 @@ mod tests {
     fn test_event_bus_creation() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("events.jsonl");
-        let bus = EventBus::new(&path).unwrap();
+        let _bus = EventBus::new(&path).unwrap();
         assert!(path.exists());
     }
 

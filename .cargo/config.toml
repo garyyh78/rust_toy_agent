@@ -1,0 +1,5 @@
+[alias]
+e2e-sum = "run -- --test sum_1_to_n"
+e2e-fib = "run -- --test fibonacci_sum"
+e2e-prime = "run -- --test prime_sum"
+e2e-lit = "run -- --test literary_style_detection"

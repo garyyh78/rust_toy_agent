@@ -191,7 +191,6 @@ impl Default for BackgroundManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use std::time::Duration;
     use tempfile::TempDir;
 

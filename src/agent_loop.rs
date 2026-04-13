@@ -386,26 +386,9 @@ Prefer tools over prose.",
             json!({"role": "user", "content": "next question"}),
         ];
 
-        // Detect: find assistant messages with tool_use not followed by tool_result
-        for i in 0..messages.len() - 1 {
-            if messages[i]["role"] == "assistant" {
-                if let Some(blocks) = messages[i]["content"].as_array() {
-                    let has_tool_use = blocks.iter().any(|b| b["type"] == "tool_use");
-                    if has_tool_use {
-                        let next = &messages[i + 1];
-                        let has_tool_result = next["content"]
-                            .as_array()
-                            .map(|arr| arr.iter().any(|b| b["type"] == "tool_result"))
-                            .unwrap_or(false);
-                        assert!(
-                            !has_tool_result,
-                            "This history is corrupted: tool_use at index {i} has no tool_result at index {}",
-                            i + 1
-                        );
-                    }
-                }
-            }
-        }
+        // Use the production function
+        let err = validate_tool_pairing(&messages);
+        assert!(err.is_some(), "Expected pairing error for corrupted history");
     }
 
     #[test]
@@ -427,32 +410,8 @@ Prefer tools over prose.",
             }),
         ];
 
-        // Verify pairing: every tool_use has a matching tool_result next
-        for i in 0..messages.len() - 1 {
-            if messages[i]["role"] == "assistant" {
-                if let Some(blocks) = messages[i]["content"].as_array() {
-                    for block in blocks {
-                        if block["type"] == "tool_use" {
-                            let tool_id = block["id"].as_str().unwrap();
-                            let next = &messages[i + 1];
-                            let has_match = next["content"]
-                                .as_array()
-                                .map(|arr| {
-                                    arr.iter().any(|b| {
-                                        b["type"] == "tool_result"
-                                            && b["tool_use_id"].as_str() == Some(tool_id)
-                                    })
-                                })
-                                .unwrap_or(false);
-                            assert!(
-                                has_match,
-                                "tool_use {tool_id} at index {i} has no matching tool_result"
-                            );
-                        }
-                    }
-                }
-            }
-        }
+        // Use the production function
+        assert!(validate_tool_pairing(&messages).is_none(), "Expected valid pairing");
     }
 
     #[test]
@@ -478,21 +437,8 @@ Prefer tools over prose.",
             }),
         ];
 
-        // Check that ALL tool_use ids have matching tool_result
-        let assistant = &messages[1];
-        let user_result = &messages[2];
-        if let Some(blocks) = assistant["content"].as_array() {
-            for block in blocks {
-                if block["type"] == "tool_use" {
-                    let id = block["id"].as_str().unwrap();
-                    let found = user_result["content"]
-                        .as_array()
-                        .map(|arr| arr.iter().any(|b| b["tool_use_id"].as_str() == Some(id)))
-                        .unwrap_or(false);
-                    assert!(found, "Missing tool_result for {id}");
-                }
-            }
-        }
+        // Use the production function
+        assert!(validate_tool_pairing(&messages).is_none(), "Expected valid pairing");
     }
 
     #[test]
