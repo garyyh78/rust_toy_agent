@@ -1,11 +1,11 @@
 #!/bin/bash
 # Run SWE-bench Lite single test
 # Usage: ./run_single_swe.sh <instance_id>
-# Example: ./run_single_swe.sh sympy__sympy-20590
+# Example: ./run_single_swe.sh django__django-12113
 
 set -e
 
-INSTANCE_ID="${1:-sympy__sympy-20590}"
+INSTANCE_ID="${1:-django__django-12113}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 

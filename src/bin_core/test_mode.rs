@@ -84,9 +84,9 @@ pub async fn run_test_mode(test_name: &str) {
     }
 }
 
-const SWE_BENCH_INSTANCE_ID: &str = "sympy__sympy-20590";
-const SWE_BENCH_REPO_URL: &str = "https://github.com/sympy/sympy.git";
-const SWE_BENCH_COMMIT: &str = "f67163260443a22f8c186d404f03f9837cd6ecaa";
+const SWE_BENCH_INSTANCE_ID: &str = "django__django-12113";
+const SWE_BENCH_REPO_URL: &str = "https://github.com/django/django.git";
+const SWE_BENCH_COMMIT: &str = "62254c5202e80a68f4fe6572a2be46a3d953de1a";
 
 pub async fn run_swe_bench_mode(instance_id: &str) {
     let workdir = env::current_dir().unwrap();
@@ -248,10 +248,10 @@ fn get_problem_statement(instance_id: &str) -> String {
     }
 
     fetch_problem_from_huggingface(instance_id).unwrap_or_else(|_| {
-        if instance_id == "sympy__sympy-20590" {
-            return "The sympify function in SymPy does not handle negative zero correctly. \
-            When sympifying '-0.0', it returns 0 instead of -0.0. This causes issues when \
-            checking equality between values that should be distinct (0 and -0.0)."
+        if instance_id == "django__django-12113" {
+            return "admin_views.test_multidb fails with persistent test SQLite database. \
+            When using persistent SQLite databases for tests (to make use of --keepdb), \
+            at least some test fails with: sqlite3.OperationalError: database is locked."
                 .to_string();
         }
         format!("Fix the bug in instance: {}", instance_id)
