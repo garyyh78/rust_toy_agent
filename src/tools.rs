@@ -835,7 +835,7 @@ mod tests {
 
     #[test]
     fn test_dispatch_todo_tool() {
-        let todo = Arc::new(Mutex::new(TodoManager::new()));
+        let todo = Mutex::new(TodoManager::new());
         let input = serde_json::json!({
             "items": [{"id": "1", "text": "Test task", "status": "pending"}]
         });
@@ -847,7 +847,7 @@ mod tests {
 
     #[test]
     fn test_dispatch_bash_not_todo() {
-        let todo = Arc::new(Mutex::new(TodoManager::new()));
+        let todo = Mutex::new(TodoManager::new());
         let input = serde_json::json!({"command": "echo hello"});
         let wd = WorkdirRoot::new(&PathBuf::from(".")).unwrap();
         let (output, did_todo) = dispatch_tools("bash", &input, &wd, &todo);
@@ -857,7 +857,7 @@ mod tests {
 
     #[test]
     fn test_dispatch_unknown_tool() {
-        let todo = Arc::new(Mutex::new(TodoManager::new()));
+        let todo = Mutex::new(TodoManager::new());
         let input = serde_json::json!({"foo": "bar"});
         let wd = WorkdirRoot::new(&PathBuf::from(".")).unwrap();
         let (output, did_todo) = dispatch_tools("unknown_tool", &input, &wd, &todo);
@@ -879,7 +879,7 @@ mod tests {
 
     #[test]
     fn test_dispatch_todo_error_returns_true() {
-        let todo = Arc::new(Mutex::new(TodoManager::new()));
+        let todo = Mutex::new(TodoManager::new());
         let input = serde_json::json!({
             "items": [{"id": "1", "text": "", "status": "pending"}]
         });

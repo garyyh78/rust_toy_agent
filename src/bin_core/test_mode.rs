@@ -6,7 +6,7 @@ use crate::tool_runners::WorkdirRoot;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 /// Run the agent in test mode with a specific test case.
 pub async fn run_test_mode(test_name: &str) {
@@ -39,7 +39,7 @@ pub async fn run_test_mode(test_name: &str) {
     let client = AnthropicClient::from_env();
     let model = env::var("MODEL_ID").expect("MODEL_ID not set");
 
-    let todo = Arc::new(Mutex::new(TodoManager::new()));
+    let todo = Mutex::new(TodoManager::new());
 
     let test_workdir = workdir.join("task_tests").join(test_name).join("workspace");
     if let Err(e) = std::fs::remove_dir_all(&test_workdir) {
@@ -133,7 +133,7 @@ pub async fn run_swe_bench_mode(instance_id: &str) {
     let client = AnthropicClient::from_env();
     let model = env::var("MODEL_ID").expect("MODEL_ID not set");
 
-    let todo = Arc::new(Mutex::new(TodoManager::new()));
+    let todo = Mutex::new(TodoManager::new());
     if let Err(e) = std::fs::create_dir_all(&results_dir) {
         tracing::error!(error = %e, "failed to create results directory");
     }

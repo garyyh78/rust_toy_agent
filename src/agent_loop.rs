@@ -287,7 +287,8 @@ pub async fn agent_loop(
         truncate_messages(messages, 8);
 
         // Step 3: call the LLM
-        let Some(response) = call_llm(client, model, system, messages, tools, logger).await else {
+        let Some(mut response) = call_llm(client, model, system, messages, tools, logger).await
+        else {
             return (total_input_tokens, total_output_tokens, round as u32);
         };
 

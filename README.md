@@ -1,6 +1,6 @@
 # Rust Toy Agent
 
-A minimal AI coding agent in Rust. It talks to the Anthropic API (or any compatible endpoint like DeepSeek), executes tools in a loop, and tracks multi-step tasks with a built-in todo system. Now includes advanced agent patterns: subagents, skill loading, context compression, agent teams, team protocols, autonomous agents, and git worktree isolation.
+A minimal AI coding agent in Rust. It talks to the Anthropic API (or any compatible endpoint like DeepSeek), executes tools in a loop, and tracks multi-step tasks with a built-in todo system. Includes subagents, skill loading, context compression, agent teams, team protocols, and git worktree isolation.
 
 ## How It Works
 
@@ -31,46 +31,55 @@ User types a prompt
 src/
 ├── main.rs                # Binary entry point (REPL)
 ├── lib.rs                 # Library root (exports 19 modules)
-├── llm_client.rs          # AnthropicClient: API wrapper
+├── llm_client.rs          # AnthropicClient: API wrapper with retry + jitter
 ├── logger.rs              # SessionLogger: stderr + file logging
-├── tool_runners.rs        # Path sandboxing + tool runners
-├── todo_manager.rs        # TodoManager: task tracking
-├── tools.rs               # TOOLS schema + dispatch_tools router
-├── agent_loop.rs          # Core loop, validation, truncation
-├── subagent.rs            # Subagent system: spawn child agents with fresh context
-├── skill_loading.rs       # Two-layer skill injection: metadata + on-demand loading
-├── context_compact.rs     # Three-layer context compression pipeline
-├── agent_teams.rs         # Agent teams with persistent named teammates + message bus
-├── team_protocols.rs      # Shutdown and plan approval protocols with request tracking
-├── worktree.rs            # Git worktree management with task isolation
-├── background_tasks.rs    # Background task execution with notification queue
-├── task_system.rs         # Persistent task management with dependency graph
-└── e2e_test.rs            # End-to-end test runner with result tracking
+├── tool_runners.rs         # Path sandboxing (WorkdirRoot) + tool runners + dispatch_basic_file_tool
+├── todo_manager.rs        # TodoManager: task tracking (max 20 items)
+├── tools.rs                # TOOLS schema + dispatch_tools router
+├── agent_loop.rs           # Core loop, validation, truncation, nag reminder
+├── subagent.rs             # Subagent system: spawn child agents with fresh context
+├── skill_loading.rs         # Skill metadata + on-demand loading (SkillLoader)
+├── context_compact.rs      # Three-layer context compression pipeline
+├── agent_teams.rs          # Agent teams with persistent named teammates + message bus
+├── team_protocols.rs        # Shutdown and plan approval protocols with request tracking
+├── worktree.rs              # Git worktree management with task isolation
+├── background_tasks.rs     # Background task execution with DashMap + mpsc notifications
+├── task_system.rs          # Persistent task management with dependency graph
+├── e2e_test.rs              # End-to-end test runner with result tracking
+└── bin_core/
+    ├── mod.rs               # Module root
+    ├── agent_loop.rs         # Full agent loop with tool dispatch
+    ├── constants.rs          # Agent name constants
+    ├── dispatch.rs           # Full agent tool dispatch router
+    ├── repl.rs               # Interactive REPL
+    ├── state.rs              # Full agent state struct
+    ├── teammate.rs           # Teammate loop implementation
+    └── test_mode.rs          # Test mode runner
 ```
 
 ### Module Responsibilities
 
 | Module | What it does | Key exports |
 |--------|-------------|-------------|
-| `llm_client` | HTTP client for Anthropic Messages API | `AnthropicClient::from_env()`, `create_message()`, `send_body()` |
+| `llm_client` | HTTP client for Anthropic Messages API with retry and jitter | `AnthropicClient::from_env()`, `create_message()`, `send_body()`, `with_max_retries()` |
 | `logger` | Dual-output logging (stderr with colors + plain text file) | `SessionLogger::new(path)`, `log_api_request()`, `log_api_response()` |
-| `tool_runners` | Filesystem sandbox and tool runners | `safe_path()`, `run_bash()`, `run_read()`, `run_write()`, `run_edit()` |
+| `tool_runners` | Filesystem sandbox (WorkdirRoot), tool runners, and shared file dispatch | `WorkdirRoot::new()`, `safe_path()`, `dispatch_basic_file_tool()`, `run_bash()`, `run_read()`, `run_write()`, `run_edit()` |
 | `todo_manager` | Task tracking with validation (max 20 items) | `TodoManager::new()`, `update()`, `render()`, `items()` |
 | `tools` | Tool JSON schema and dispatch router | `TOOLS` const, `dispatch_tools()` |
 | `agent_loop` | Core agent loop with validation, truncation, nag reminder | `agent_loop()`, `validate_tool_pairing()`, `truncate_messages()`, `call_llm()`, `dispatch_tool_calls()` |
-| `subagent` | Spawn child agents with fresh context | `Subagent::new()`, `run_subagent()`, `agent_loop()` |
-| `skill_loading` | Two-layer skill injection: metadata + on-demand loading | `SkillLoader::new()`, `get_descriptions()`, `get_content()` |
+| `subagent` | Spawn child agents with fresh context | `Subagent::new()`, `run_subagent()` |
+| `skill_loading` | Skill metadata + on-demand loading | `SkillLoader::new()`, `get_descriptions()`, `get_content()` |
 | `context_compact` | Three-layer context compression pipeline | `ContextCompactor::new()`, `micro_compact()`, `auto_compact()`, `compact()` |
 | `agent_teams` | Persistent named teammates with thread-safe message bus | `MessageBus::new()`, `send()`, `read_inbox()`, `broadcast()`, `TeammateManager::new()`, `spawn()`, `list_all()` |
 | `team_protocols` | Shutdown and plan approval with DashMap request tracking | `ProtocolTracker::new()`, `create_shutdown_request()`, `respond_shutdown()`, `submit_plan()`, `review_plan()` |
 | `worktree` | Git worktree management with task binding and event bus | `WorktreeManager::new()`, `create()`, `remove()`, `keep()`, `run()`, `EventBus`, `TaskBinding` |
-| `background_tasks` | Background task execution with notification queue | `BackgroundTaskRunner::new()`, `spawn()`, `submit()`, `poll()` |
+| `background_tasks` | Background task execution with DashMap + mpsc notification queue | `BackgroundManager::new()`, `run()`, `check()`, `drain_notifications()` |
 | `task_system` | Persistent task management with dependency graph | `TaskSystem::new()`, `create_task()`, `update_status()`, `get_dependencies()` |
 | `e2e_test` | End-to-end test runner with result tracking | `run_test()`, `load_test_case()`, `save_test_result()` |
 | `bin_core` | Core binary components: REPL, state, dispatch | `run_repl()`, `AppState::new()`, `dispatch()` |
-| `config` | Configuration loading from environment | `Config::from_env()`, `load()` |
+| `config` | Centralized constants and tuning knobs | `MAX_TOOL_OUTPUT_BYTES`, `LEAD_MAX_TOKENS`, `BASH_ENV_ALLOWLIST`, etc. |
 | `metrics` | Round-level metrics collection and reporting | `RoundMetrics::new()`, `record()`, `summarize()` |
-| `text_util` | Text utilities for token counting and truncation | `count_tokens()`, `truncate_text()`, `split_by_token_limit()` |
+| `text_util` | Unicode-safe string truncation utilities | `truncate_chars()`, `truncate_chars_ellipsis()` |
 
 ### Tools
 
@@ -174,50 +183,26 @@ task_tests/
 
 | Module | Tests | What's covered |
 |--------|-------|----------------|
-| `tool_runners` | 16 | Path normalization, safe_path escapes, bash blocking, file CRUD |
-| `llm_client` | 10 | Request body building, API error handling (401, 400, connection failure) |
+| `tool_runners` | 16 | Path normalization, safe_path escapes, WorkdirRoot, bash blocking, file CRUD |
+| `llm_client` | 7 | Request body building, API error handling (401, 400, connection failure) |
 | `todo_manager` | 17 | Validation, render format, update/replacement, boundary conditions |
 | `tools` | 18 | TOOLS schema, dispatch routing |
 | `agent_loop` | 36 | Nag reminder, tool pairing, message truncation, corrupted history, API error extraction |
 | `logger` | 11 | SessionLogger file creation, timestamps, stderr output |
-| `subagent` | 19 | Subagent creation, tool dispatch, child tools |
-| `skill_loading` | 7 | Frontmatter parsing, skill loader, skill agent, system prompt |
+| `subagent` | 17 | Subagent creation, tool dispatch, child tools |
+| `skill_loading` | 4 | Frontmatter parsing, skill loader |
 | `context_compact` | 5 | Token estimation, micro_compact, tool dispatch, compactor creation |
 | `agent_teams` | 16 | Message bus, send/read/broadcast, teammate manager, spawn, persistence |
 | `team_protocols` | 17 | Shutdown protocol, plan approval, concurrent tracking, serialization |
 | `worktree` | 20 | Event bus, index, task binding, name validation, worktree manager |
 | `text_util` | 4 | Unicode-safe truncation with and without ellipsis |
-| `bin_core::dispatch` | 5 | Tool dispatch routing, unknown/idle/compact handlers |
+| `background_tasks` | 3 | Task creation, notification drain, exactly-once execution |
+| `task_system` | 3 | Task creation, dependency tracking, status management |
+| `bin_core::state` | 2 | State creation, tools count |
+| `bin_core::dispatch` | 5 | Tool dispatch routing, unknown/idle/compact/worktree handlers |
+| `bin_core::constants` | 1 | LEAD constant |
 
-Total: **214 tests** (210 unit + 4 CLI integration). Run `cargo test` to verify.
-
-## End-to-End Tests
-
-The project includes E2E tests to evaluate the agent on real programming tasks. Each test runs the agent in a clean workspace, tracks execution time, token usage, and number of steps.
-
-| Test | Language | Expected Output |
-|------|----------|-----------------|
-| `sum_1_to_n` | Python | 50005000 |
-| `fibonacci_sum` | C++ | 2178308 |
-| `prime_sum` | TypeScript | 3682913 |
-| `literary_style_detection` | Python | "correct" |
-
-Run tests:
-
-```bash
-# Run individual tests
-cargo run --release -- --test sum_1_to_n
-cargo run --release -- --test fibonacci_sum
-cargo run --release -- --test prime_sum
-cargo run --release -- --test literary_style_detection
-
-# Or use aliases
-cargo e2e-sum
-cargo e2e-fib
-cargo e2e-prime
-```
-
-Test results are saved to `task_tests/test_results/` with model name, commit hash, execution time, token counts, and step count.
+Total: **205 unit tests + 4 CLI integration**. Run `cargo test` to verify.
 
 ## License
 

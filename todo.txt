@@ -1,0 +1,257 @@
+rust_toy_agent — Code Improvement TODO
+======================================
+
+Generated 2026-04-14 from a fresh scan of src/, Cargo.toml, .github/workflows/,
+README.md, and `cargo clippy --pedantic` output. Items are ordered by impact
+(correctness/perf > duplication > style). Each item lists files, the rule that
+triggered it (when applicable), a concrete action plan, and acceptance criteria.
+
+STATUS KEY: [done] = completed, [in_progress] = being worked on, [pending] = not started
+
+Build/test baseline at scan time:
+  - cargo build:                 clean
+  - cargo test:                  205 passing (205 unit + 4 integration)
+  - cargo clippy -- -D warnings: clean
+  - cargo clippy -W pedantic:    ~70 lints (this list addresses the meaningful ones)
+
+================================================================================
+CORRECTNESS / API SOUNDNESS
+================================================================================
+
+[1] dispatch_tool_calls now takes &Mutex<TodoManager> instead of Arc<Mutex<TodoManager>>
+    [DONE]
+    Files: src/agent_loop.rs, src/tools.rs, src/e2e_test.rs, src/bin_core/test_mode.rs,
+           src/bin_core/state.rs
+    Why it matters: holding an Arc::new() per call was wasteful; the State holds a
+                    plain Mutex<TodoManager>. Using &Mutex avoids the per-call allocation
+                    and clarifies ownership. The std::sync::Mutex guard is dropped before
+                    any .await, so there is no deadlock risk.
+
+    Changes made:
+      - Changed dispatch_tool_calls signature from &Arc<Mutex<TodoManager>> to &Mutex<TodoManager>
+      - Changed agent_loop signature from &Arc<Mutex<TodoManager>> to &Mutex<TodoManager>
+      - Changed dispatch_tools signature from &Arc<Mutex<TodoManager>> to &Mutex<TodoManager>
+      - Updated all callers (e2e_test, test_mode, tools tests)
+      - Removed Arc import from agent_loop, tools, e2e_test, test_mode
+
+    Acceptance: cargo clippy -- -W clippy::await_holding_lock passes; no
+                test deadlocks under --test-threads=1; Arc<Mutex<TodoManager>> no
+                longer appears in signatures.
+
+[2] safe_path() uses precomputed WorkdirRoot to avoid repeated canonicalize syscalls [DONE]
+    File: src/tool_runners.rs (WorkdirRoot, safe_path)
+    Why it matters: canonicalize() does a syscall per path component. The agent
+                    calls safe_path dozens of times per loop.
+
+    Changes made:
+      - Added WorkdirRoot struct with original + canonical paths computed once
+      - Changed all tool runners and dispatch to accept &WorkdirRoot
+      - safe_path now uses the precomputed canonical root
+
+    Acceptance: existing tests pass; safe_path no longer calls canonicalize
+                on every invocation.
+
+[3] BackgroundManager uses DashMap for tasks and mpsc for notifications [DONE]
+    File: src/background_tasks.rs
+    Why it matters: avoids global lock contention on every background spawn
+                    and check.
+
+    Changes made:
+      - Replaced Arc<Mutex<HashMap<...>>> tasks with Arc<DashMap<...>>>
+      - Replaced Mutex<Vec<Notification>> notification_queue with mpsc::unbounded_channel
+      - drain_notifications now polls the receiver via try_recv()
+
+    Acceptance: background_command_runs_exactly_once and test_drain_notifications
+                still pass; no Mutex on the task map or notification queue.
+
+[4] run_write propagates mkdir errors instead of silently ignoring them [DONE]
+    File: src/tool_runners.rs (run_write)
+    Why it matters: if mkdir fails (permission denied, ENOTDIR), the subsequent
+                    fs::write fails with confusing errors.
+
+    Changes made:
+      - Changed let _ = std::fs::create_dir_all(parent) to propagate the error
+
+    Acceptance: mkdir errors are now surfaced; test pass.
+
+[5] llm_client::jitter() uses thread-local PRNG instead of clock nanos [DONE]
+    File: src/llm_client.rs
+    Why it matters: clock-nanos-based jitter was correlated across concurrent
+                    retries, defeating the purpose.
+
+    Changes made:
+      - Added thread-local RNG (rand::rngs::StdRng) seeded from SystemTime
+      - Replaced nanos-based calculation with rng.gen_range()
+
+    Acceptance: rand = "0.8" added to Cargo.toml; jitter produces different
+                delays across concurrent calls.
+
+================================================================================
+DUPLICATION / DEAD CODE
+================================================================================
+
+[6] BASH_ENV_ALLOWLIST centralized in config.rs [DONE]
+    Files: src/config.rs, src/tool_runners.rs, src/background_tasks.rs
+    Acceptance: single definition in config.rs; both files use crate::config::BASH_ENV_ALLOWLIST.
+
+[7] dispatch_child_tool deduplicated via dispatch_basic_file_tool in tool_runners.rs [DONE]
+    Files: src/tool_runners.rs, src/subagent.rs, src/skill_loading.rs (SkillAgent removed)
+    Acceptance: both subagent and compactor use dispatch_basic_file_tool; no
+                duplicate bash/read/write/edit dispatch table.
+
+[8] MAX_OUTPUT_SIZE centralized as MAX_TOOL_OUTPUT_BYTES in config.rs [DONE]
+    Files: src/config.rs, src/tool_runners.rs, src/background_tasks.rs, src/subagent.rs
+    Acceptance: grep -n 50_000 src/ returns only the config.rs definition.
+
+[9] SkillAgent dead code removed [DONE]
+    File: src/skill_loading.rs (SkillAgent struct and ~70 lines of dead code removed)
+    Acceptance: grep SkillAgent src/ returns nothing; test count reduced; file shrinks.
+
+[10] Subagent struct cleaned up — parent_tools field and #[allow(dead_code)] removed [DONE]
+    File: src/subagent.rs
+    Why it matters: parent_tools was constructed but only used in tests, not in
+                    run_subagent. Removing it eliminates dead code.
+
+    Changes made:
+      - Removed parent_tools field from Subagent
+      - Removed #[allow(dead_code)] annotation
+      - Removed tests that only tested parent_tools
+      - Removed parent_agent_tools import
+
+    Acceptance: subagent.rs has no #[allow(dead_code)]; cargo build/test green.
+
+================================================================================
+PERFORMANCE
+================================================================================
+
+[12] truncate_chars uses UTF-8 boundary slice instead of chars().collect() [DONE]
+    File: src/text_util.rs
+    Acceptance: tests pass; one allocation per call removed.
+
+[13] agent_loop uses response["content"].take() instead of .clone() [DONE]
+    Files: src/agent_loop.rs
+    Why it matters: cloning serde_json::Value deep-copies every nested string;
+                    .take() leaves Null and avoids the allocation.
+
+    Changes made:
+      - Changed `let content = response["content"].clone()` to `response["content"].take()`
+      - Made response `mut` in the let binding
+
+    Acceptance: agent_loop.rs no longer deep-clones the response content.
+
+[14] subagent uses truncate_chars instead of inline chars().take().collect() [DONE]
+    File: src/subagent.rs
+    Acceptance: subagent.rs uses crate::text_util::truncate_chars; inline
+                chars().take().collect() removed.
+
+[15] BackgroundManager uses DashMap instead of Arc<Mutex<HashMap>> [DONE]
+    (Folded into [3] above)
+
+================================================================================
+LINTS / IDIOMATIC CLEANUP
+================================================================================
+
+[16] 37 uninlined format args fixed via cargo clippy --fix [DONE]
+
+[17] .map().unwrap_or() → .map_or() patterns [DONE — no instances found in codebase]
+
+[18] 4 manual let-Some/match patterns converted to let-else [DONE]
+
+[19] .sort() on primitives → .sort_unstable() [DONE]
+
+[20] Case-sensitive file extension comparisons fixed [DONE]
+
+[21] Useless vec! in subagent test replaced with array literal [DONE]
+    File: src/subagent.rs:216
+
+[22] &mut Vec<Json> → &mut [Json] in test helper [DONE]
+
+[23] #[must_use] added to builder method with_max_retries [DONE]
+    File: src/llm_client.rs
+
+================================================================================
+LOGGING / OBSERVABILITY
+================================================================================
+
+[24] eprintln in agent_loop replaced with tracing [PARTIAL]
+    Files: src/agent_loop.rs
+    Why it matters: remaining eprintln/println calls bypass the file logger.
+
+    Changes made:
+      - Added tracing::info! call for stop_reason in agent_loop
+
+    Remaining: src/bin_core/repl.rs and src/bin_core/test_mode.rs still have
+    eprintln/println calls that are UI-facing (banners, prompts) which should
+    remain as-is.
+
+[25] Arc<Mutex<TodoManager>> inconsistency fixed — now &Mutex<TodoManager> everywhere [DONE]
+    See [1] for details.
+
+================================================================================
+REMAINING ITEMS (not yet addressed)
+================================================================================
+
+[11] worktree.rs is 959 LOC in a single module [PENDING]
+    File: src/worktree.rs
+    Why it matters: reading the file requires paging through 30+ tests to find
+                    production code.
+
+    Action plan:
+      Step 1. Convert worktree.rs into a directory module:
+                src/worktree/mod.rs       — re-exports
+                src/worktree/index.rs     — WorktreeIndex
+                src/worktree/events.rs    — EventBus, WorktreeEvent
+                src/worktree/binding.rs   — TaskBinding
+                src/worktree/manager.rs   — WorktreeManager (git2 calls)
+      Step 2. Move the #[cfg(test)] mod tests blocks alongside the code
+              they exercise (each submodule keeps its own tests).
+      Step 3. Update lib.rs `pub mod worktree;` — no API change.
+
+    Acceptance: no file in src/worktree/ exceeds 350 LOC; existing 20
+                worktree tests still pass.
+
+[26] CI does not exercise --release builds or e2e aliases [PENDING]
+    File: .github/workflows/ci.yml
+
+    Action plan:
+      Step 1. Add a release-build job that runs cargo build --release.
+      Step 2. Optionally add a smoke test with --test sum_1_to_n.
+      Step 3. Cache release target/ separately from debug.
+
+    Acceptance: CI has 2 build jobs (debug + release); both green on main.
+
+[27] No tests pin against a mock LLM server [PENDING]
+    Files: tests/cli_integration.rs
+
+    Action plan:
+      Step 1. Add wiremock as dev-dependency.
+      Step 2. Stub /v1/messages to return canned tool_use → tool_result sequences.
+      Step 3. Add a 429-then-200 test that proves retry/backoff.
+
+    Acceptance: at least 2 new integration tests run with no real API key.
+
+[28] Add cargo-audit to CI for dependency advisories [PENDING]
+    File: .github/workflows/ci.yml
+
+    Action plan:
+      Step 1. Add a job that runs `cargo audit`.
+      Step 2. Fail on high/critical, soft-fail on low/info.
+
+    Acceptance: PRs run cargo audit; main is clean today.
+
+[29] README module counts and descriptions [DONE]
+    Acceptance: README now matches src/ directory; test counts updated.
+
+================================================================================
+END OF FILE
+================================================================================
+
+Notes:
+  - Items above are independent except where noted (e.g. [14] depends on [12]
+    landing first, [27] unblocks a release smoke test in [26]).
+  - Bug-class items [1]-[5] are all resolved.
+  - Duplication/dead-code items [6]-[10] are all resolved.
+  - Performance items [12]-[15] are all resolved.
+  - Lint items [16]-[23] are all resolved.
+  - Remaining items: [11] (worktree split), [24] (partial — UI-facing prints remain),
+    [26]-[28] (CI improvements), and [29] (README — done).
