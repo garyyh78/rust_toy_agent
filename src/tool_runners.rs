@@ -33,13 +33,50 @@
 
 use std::path::{Component, Path, PathBuf};
 use std::process::Command as Proc;
+use crate::config::BASH_ENV_ALLOWLIST;
 
 /// Maximum output size for tool results (50KB).
 const MAX_OUTPUT_SIZE: usize = 50_000;
 
-const BASH_ENV_ALLOWLIST: &[&str] = &[
-    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TERM", "TMPDIR", "SHELL", "PWD",
-];
+
+
+// -- WorkdirRoot --
+// Owns both the original and canonicalized workdir paths, computed once at construction.
+
+/// A container for workdir paths that are computed once at initialization.
+/// The canonical form is used for sandboxing checks in safe_path().
+#[derive(Clone)]
+pub struct WorkdirRoot {
+    /// The original user-specified workdir path (as-provided).
+    original: PathBuf,
+    /// The canonicalized (absolute, symlink-resolved) workdir path.
+    canonical: PathBuf,
+}
+
+impl WorkdirRoot {
+    /// Create a new WorkdirRoot from a user-provided path.
+    /// Computes the canonical form once; the original is stored as-is.
+    pub fn new(path: &Path) -> Result<Self, String> {
+        let canonical = path
+            .canonicalize()
+            .map_err(|e| format!("canonicalize workdir: {}", e))?;
+        Ok(Self {
+            original: path.to_path_buf(),
+            canonical,
+        })
+    }
+
+    /// Returns a reference to the original (as-provided) path.
+    pub fn as_path(&self) -> &Path {
+        &self.original
+    }
+
+    /// Returns a reference to the canonicalized path.
+    pub fn as_canonical(&self) -> &Path {
+        &self.canonical
+    }
+}
+
 
 // -- Path helpers --
 // Normalize resolves "." and ".." without touching the filesystem.
@@ -88,13 +125,14 @@ fn canonicalize_partial(p: &Path) -> Result<PathBuf, String> {
     Ok(result)
 }
 
-pub fn safe_path(p: &str, workdir: &Path) -> Result<PathBuf, String> {
-    let workdir_canon = workdir
-        .canonicalize()
-        .map_err(|e| format!("workdir canon: {}", e))?;
+/// Resolve a user-supplied path relative to a pre-canonicalized workdir.
+/// Uses the precomputed canonical root to avoid repeated syscalls.
+pub fn safe_path(p: &str, workdir_root: &WorkdirRoot) -> Result<PathBuf, String> {
+    let workdir_canon = workdir_root.as_canonical();
+    let workdir = workdir_root.as_path();
     let joined = workdir.join(p);
     let resolved = canonicalize_partial(&joined)?;
-    if !resolved.starts_with(&workdir_canon) {
+    if !resolved.starts_with(workdir_canon) {
         return Err(format!("path escapes sandbox: {}", p));
     }
     Ok(resolved)
@@ -145,8 +183,8 @@ pub fn run_bash(command: &str, workdir: &Path) -> String {
 }
 
 /// Read a file as UTF-8 text. Optionally limit to first N lines.
-pub fn run_read(path: &str, limit: Option<usize>, workdir: &Path) -> String {
-    match safe_path(path, workdir) {
+pub fn run_read(path: &str, limit: Option<usize>, workdir_root: &WorkdirRoot) -> String {
+    match safe_path(path, workdir_root) {
         Err(e) => format!("Error: {e}"),
         Ok(fp) => match std::fs::read_to_string(&fp) {
             Err(e) => format!("Error: {e}"),
@@ -171,8 +209,8 @@ pub fn run_read(path: &str, limit: Option<usize>, workdir: &Path) -> String {
 }
 
 /// Write content to a file, creating parent directories as needed.
-pub fn run_write(path: &str, content: &str, workdir: &Path) -> String {
-    match safe_path(path, workdir) {
+pub fn run_write(path: &str, content: &str, workdir_root: &WorkdirRoot) -> String {
+    match safe_path(path, workdir_root) {
         Err(e) => format!("Error: {e}"),
         Ok(fp) => {
             if let Some(parent) = fp.parent() {
@@ -187,8 +225,8 @@ pub fn run_write(path: &str, content: &str, workdir: &Path) -> String {
 }
 
 /// Replace the first occurrence of `old_text` with `new_text` in a file.
-pub fn run_edit(path: &str, old_text: &str, new_text: &str, workdir: &Path) -> String {
-    match safe_path(path, workdir) {
+pub fn run_edit(path: &str, old_text: &str, new_text: &str, workdir_root: &WorkdirRoot) -> String {
+    match safe_path(path, workdir_root) {
         Err(e) => format!("Error: {e}"),
         Ok(fp) => match std::fs::read_to_string(&fp) {
             Err(e) => format!("Error: {e}"),

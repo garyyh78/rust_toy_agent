@@ -10,13 +10,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use crate::config::BASH_ENV_ALLOWLIST;
 
 /// Maximum output size for background task results (50KB).
 const MAX_BG_OUTPUT_SIZE: usize = 50_000;
 
-const BASH_ENV_ALLOWLIST: &[&str] = &[
-    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TERM", "TMPDIR", "SHELL", "PWD",
-];
 
 fn build_command(command: &str, workdir: &std::path::Path) -> std::process::Command {
     let mut cmd = std::process::Command::new("sh");

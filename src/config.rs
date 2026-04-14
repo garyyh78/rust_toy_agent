@@ -47,3 +47,8 @@ pub const IDLE_TIMEOUT_SECS: u64 = 60;
 
 /// Bash command timeout (seconds).
 pub const BASH_TIMEOUT_SECS: u64 = 60;
+
+/// Allowlist of environment variables passed to bash commands.
+pub const BASH_ENV_ALLOWLIST: &[&str] = &[
+    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TERM", "TMPDIR", "SHELL", "PWD",
+];
