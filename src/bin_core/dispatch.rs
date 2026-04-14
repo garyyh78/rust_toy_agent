@@ -1,4 +1,3 @@
-use crate::background_tasks::BackgroundManager;
 use crate::bin_core::constants::LEAD;
 use crate::bin_core::state::State;
 use crate::llm_client::AnthropicClient;
@@ -6,7 +5,7 @@ use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
 use serde_json::Value as Json;
 
 /// Dispatch a tool call by name. Returns the output string.
-pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
+pub async fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
     let wd = &state.workdir;
     match name {
         "bash" => run_bash(input["command"].as_str().unwrap_or(""), wd),
@@ -50,12 +49,8 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             };
             tracing::info!(desc = %desc, prompt = %preview, "dispatching subagent task");
 
-            // Note: This runs the subagent synchronously since dispatch_tool is sync.
-            // The nested runtime issue from [1] is avoided by blocking on the runtime
-            // that spawned this task, which works because we're not inside an async
-            // context that already holds a runtime reference.
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(state.subagent.run_subagent(prompt))
+            // Run the subagent asynchronously using the existing runtime.
+            state.subagent.run_subagent(prompt).await
         }
         "load_skill" => state
             .skills
@@ -126,32 +121,32 @@ pub fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             };
             match team.spawn(name, role) {
                 Ok(msg) => {
-                    // Clone data for the spawned thread
                     let client =
                         AnthropicClient::new(&state.client.api_key, &state.client.base_url);
                     let model = state.model.clone();
                     let workdir = state.workdir.clone();
                     let bus = Arc::clone(&state.bus);
                     let protocols = state.protocols.clone();
-                    let _bg = BackgroundManager::new();
-
+                    let task_mgr = Arc::clone(&state.task_mgr);
                     let name_owned = name.to_string();
                     let role_owned = role.to_string();
                     let prompt_owned = prompt.to_string();
                     let team_name = team.team_name().to_string();
 
-                    std::thread::spawn(move || {
+                    tokio::spawn(async move {
                         crate::bin_core::teammate::teammate_loop(
                             client,
                             model,
                             workdir,
                             bus,
                             protocols,
-                            &name_owned,
-                            &role_owned,
-                            &prompt_owned,
-                            &team_name,
-                        );
+                            task_mgr,
+                            name_owned,
+                            role_owned,
+                            prompt_owned,
+                            team_name,
+                        )
+                        .await
                     });
                     msg
                 }
@@ -268,43 +263,43 @@ mod tests {
         State::new(client, "test-model".to_string(), workdir).unwrap()
     }
 
-    #[test]
-    fn test_dispatch_unknown_tool() {
+    #[tokio::test]
+    async fn test_dispatch_unknown_tool() {
         let state = test_state();
         let input = serde_json::json!({});
-        let result = dispatch_tool(&state, "unknown_tool", &input);
+        let result = dispatch_tool(&state, "unknown_tool", &input).await;
         assert!(result.contains("Unknown tool"));
     }
 
-    #[test]
-    fn test_dispatch_idle() {
+    #[tokio::test]
+    async fn test_dispatch_idle() {
         let state = test_state();
         let input = serde_json::json!({});
-        let result = dispatch_tool(&state, "idle", &input);
+        let result = dispatch_tool(&state, "idle", &input).await;
         assert_eq!(result, "Lead does not idle.");
     }
 
-    #[test]
-    fn test_dispatch_compact() {
+    #[tokio::test]
+    async fn test_dispatch_compact() {
         let state = test_state();
         let input = serde_json::json!({});
-        let result = dispatch_tool(&state, "compact", &input);
+        let result = dispatch_tool(&state, "compact", &input).await;
         assert_eq!(result, "Compacting...");
     }
 
-    #[test]
-    fn test_dispatch_worktree_list() {
+    #[tokio::test]
+    async fn test_dispatch_worktree_list() {
         let state = test_state();
         let input = serde_json::json!({});
-        let result = dispatch_tool(&state, "worktree_list", &input);
+        let result = dispatch_tool(&state, "worktree_list", &input).await;
         assert!(result.contains("No worktrees") || result.contains("["));
     }
 
-    #[test]
-    fn test_dispatch_worktree_create_missing_git() {
+    #[tokio::test]
+    async fn test_dispatch_worktree_create_missing_git() {
         let state = test_state();
         let input = serde_json::json!({"name": "test-wt"});
-        let result = dispatch_tool(&state, "worktree_create", &input);
+        let result = dispatch_tool(&state, "worktree_create", &input).await;
         assert!(result.contains("Error:"));
     }
 }

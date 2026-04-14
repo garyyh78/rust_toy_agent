@@ -11,28 +11,23 @@ use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
 use crate::tools::teammate_tools;
 use serde_json::Value as Json;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::thread;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 #[allow(clippy::too_many_arguments)]
-pub fn teammate_loop(
+pub async fn teammate_loop(
     client: AnthropicClient,
     model: String,
     workdir: PathBuf,
     bus: Arc<MessageBus>,
     protocols: ProtocolTracker,
-    name: &str,
-    role: &str,
-    prompt: &str,
-    team_name: &str,
+    task_mgr: Arc<Mutex<TaskManager>>,
+    name: String,
+    role: String,
+    prompt: String,
+    team_name: String,
 ) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
     let _todo = TodoManager::new();
-    let mut task_mgr = match TaskManager::new(&workdir.join(".tasks")) {
-        Ok(m) => m,
-        Err(_) => return,
-    };
     let compactor = ContextCompactor::new(
         AnthropicClient::new(&client.api_key, &client.base_url),
         workdir.to_string_lossy().to_string(),
@@ -52,13 +47,10 @@ pub fn teammate_loop(
     // WORK PHASE
     for _ in 0..TEAMMATE_MAX_ROUNDS {
         // Check inbox
-        let inbox = bus.read_inbox(name);
+        let inbox = bus.read_inbox(&name);
         for msg in &inbox {
             if msg.msg_type == "shutdown_request" {
-                let _ = protocols.respond_shutdown(
-                    &msg.content, // request_id is in content
-                    true,
-                );
+                let _ = protocols.respond_shutdown(&msg.content, true);
                 return;
             }
             messages.push(serde_json::json!({
@@ -71,13 +63,16 @@ pub fn teammate_loop(
         compactor.micro_compact(&mut messages);
 
         // LLM call
-        let response = match rt.block_on(client.create_message(
-            &model,
-            Some(&sys_prompt),
-            &messages,
-            Some(&team_tools),
-            TEAMMATE_MAX_TOKENS,
-        )) {
+        let response = match client
+            .create_message(
+                &model,
+                Some(&sys_prompt),
+                &messages,
+                Some(&team_tools),
+                TEAMMATE_MAX_TOKENS,
+            )
+            .await
+        {
             Ok(r) => r,
             Err(_) => return,
         };
@@ -107,7 +102,12 @@ pub fn teammate_loop(
                         }
                         "claim_task" => {
                             let tid = input["task_id"].as_u64().unwrap_or(0) as u32;
-                            match task_mgr.update(tid, Some("in_progress"), None, None) {
+                            match task_mgr.lock().unwrap().update(
+                                tid,
+                                Some("in_progress"),
+                                None,
+                                None,
+                            ) {
                                 Ok(_) => format!("Claimed task #{tid}"),
                                 Err(e) => format!("Error: {e}"),
                             }
@@ -115,7 +115,7 @@ pub fn teammate_loop(
                         "send_message" => {
                             let to = input["to"].as_str().unwrap_or("");
                             let content = input["content"].as_str().unwrap_or("");
-                            match bus.send(name, to, content, "message") {
+                            match bus.send(&name, to, content, "message") {
                                 Ok(r) => r,
                                 Err(e) => format!("Error: {e}"),
                             }
@@ -170,19 +170,19 @@ pub fn teammate_loop(
         Ok(t) => t,
         Err(_) => return,
     };
-    team.set_status(name, "idle");
+    team.set_status(&name, "idle");
 
     let idle_polls = (IDLE_TIMEOUT_SECS / POLL_INTERVAL_SECS.max(1)) as usize;
     let mut resume = false;
 
     for _ in 0..idle_polls {
-        thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
+        tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
 
-        let inbox = bus.read_inbox(name);
+        let inbox = bus.read_inbox(&name);
         if !inbox.is_empty() {
             for msg in &inbox {
                 if msg.msg_type == "shutdown_request" {
-                    team.set_status(name, "shutdown");
+                    team.set_status(&name, "shutdown");
                     return;
                 }
                 messages.push(serde_json::json!({
@@ -196,7 +196,7 @@ pub fn teammate_loop(
 
         // Auto-claim unclaimed tasks
         {
-            let list = task_mgr.list_all();
+            let list = task_mgr.lock().unwrap().list_all();
             let unclaimed_tid: Option<u32> = list
                 .lines()
                 .filter(|l| l.contains("[ ]") && !l.contains("blocked"))
@@ -208,6 +208,8 @@ pub fn teammate_loop(
                 });
             if let Some(tid) = unclaimed_tid {
                 if task_mgr
+                    .lock()
+                    .unwrap()
                     .update(tid, Some("in_progress"), None, None)
                     .is_ok()
                 {
@@ -236,10 +238,10 @@ pub fn teammate_loop(
     }
 
     if !resume {
-        team.set_status(name, "shutdown");
+        team.set_status(&name, "shutdown");
         return;
     }
 
-    team.set_status(name, "working");
+    team.set_status(&name, "working");
     // Could recursively call teammate_loop here to continue work
 }

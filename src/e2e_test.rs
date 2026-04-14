@@ -227,6 +227,7 @@ pub fn print_test_result(result: &TestResult) {
     }
 }
 
+/// Writes the result JSON to disk. Does not touch git — curation is manual (see README).
 pub fn save_test_result(result: &TestResult, results_dir: &Path) -> std::io::Result<()> {
     fs::create_dir_all(results_dir)?;
 

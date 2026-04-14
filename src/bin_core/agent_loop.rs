@@ -104,7 +104,7 @@ pub async fn agent_loop(
                         manual_compact = true;
                     }
 
-                    let output = dispatch_tool(state, tool_name, input);
+                    let output = dispatch_tool(state, tool_name, input).await;
 
                     let preview = if output.chars().count() > 200 {
                         format!("{}...", output.chars().take(200).collect::<String>())

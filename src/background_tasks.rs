@@ -73,8 +73,6 @@ impl BackgroundManager {
         let task_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
         let task_id_for_thread = task_id.clone();
         let command_owned = command.to_string();
-        let command_for_output = command_owned.clone();
-        let command_for_status = command_owned.clone();
         let tasks = Arc::clone(&self.tasks);
         let notification_queue = Arc::clone(&self.notification_queue);
         let workdir = workdir.to_path_buf();
@@ -99,26 +97,21 @@ impl BackgroundManager {
         }
 
         thread::spawn(move || {
-            let status = build_command(&command_for_status, &workdir)
-                .output()
-                .map(|o| {
-                    if o.status.success() {
+            let output_result = build_command(&command_owned, &workdir).output();
+
+            let (status, output) = match output_result {
+                Ok(o) => {
+                    let status = if o.status.success() {
                         "completed".to_string()
                     } else {
                         "failed".to_string()
-                    }
-                })
-                .unwrap_or_else(|_| "error".to_string());
-
-            let output = build_command(&command_for_output, &workdir)
-                .output()
-                .map(|o| {
-                    let out = o.stdout;
-                    let err = o.stderr;
-                    let combined = [out, err].concat();
-                    String::from_utf8_lossy(&combined).trim().to_string()
-                })
-                .unwrap_or_else(|e| format!("Error: {}", e));
+                    };
+                    let combined = [o.stdout, o.stderr].concat();
+                    let text = String::from_utf8_lossy(&combined).trim().to_string();
+                    (status, text)
+                }
+                Err(e) => ("error".to_string(), format!("Error: {}", e)),
+            };
 
             let output_truncated = if output.len() > MAX_BG_OUTPUT_SIZE {
                 truncate_chars(&output, MAX_BG_OUTPUT_SIZE)
@@ -142,7 +135,7 @@ impl BackgroundManager {
 
             {
                 let mut queue = match notification_queue.lock() {
-                    Ok(l) => l,
+                    Ok(q) => q,
                     Err(e) => {
                         tracing::error!(error = %e, "lock poisoned");
                         return;
@@ -256,5 +249,18 @@ mod tests {
 
         let notifs = mgr.drain_notifications();
         assert!(!notifs.is_empty());
+    }
+
+    #[test]
+    fn background_command_runs_exactly_once() {
+        let tmp = TempDir::new().unwrap();
+        let mgr = BackgroundManager::new();
+        let marker = tmp.path().join("marker.txt");
+
+        mgr.run(&format!("echo x >> {}", marker.display()), tmp.path());
+        thread::sleep(Duration::from_millis(500));
+
+        let content = std::fs::read_to_string(&marker).unwrap();
+        assert_eq!(content, "x\n");
     }
 }
