@@ -30,7 +30,7 @@ User types a prompt
 ```
 src/
 ├── main.rs                # Binary entry point (REPL)
-├── lib.rs                 # Library root (exports 13 modules)
+├── lib.rs                 # Library root (exports 19 modules)
 ├── llm_client.rs          # AnthropicClient: API wrapper
 ├── logger.rs              # SessionLogger: stderr + file logging
 ├── tool_runners.rs        # Path sandboxing + tool runners
@@ -42,7 +42,6 @@ src/
 ├── context_compact.rs     # Three-layer context compression pipeline
 ├── agent_teams.rs         # Agent teams with persistent named teammates + message bus
 ├── team_protocols.rs      # Shutdown and plan approval protocols with request tracking
-├── autonomous_agents.rs   # Idle polling, auto task claiming, identity re-injection
 ├── worktree.rs            # Git worktree management with task isolation
 ├── background_tasks.rs    # Background task execution with notification queue
 ├── task_system.rs         # Persistent task management with dependency graph
@@ -56,7 +55,7 @@ src/
 | `llm_client` | HTTP client for Anthropic Messages API | `AnthropicClient::from_env()`, `create_message()`, `send_body()` |
 | `logger` | Dual-output logging (stderr with colors + plain text file) | `SessionLogger::new(path)`, `log_api_request()`, `log_api_response()` |
 | `tool_runners` | Filesystem sandbox and tool runners | `safe_path()`, `run_bash()`, `run_read()`, `run_write()`, `run_edit()` |
-| `todo_manager` | Task tracking with validation (max 32 items) | `TodoManager::new()`, `update()`, `render()`, `items()` |
+| `todo_manager` | Task tracking with validation (max 20 items) | `TodoManager::new()`, `update()`, `render()`, `items()` |
 | `tools` | Tool JSON schema and dispatch router | `TOOLS` const, `dispatch_tools()` |
 | `agent_loop` | Core agent loop with validation, truncation, nag reminder | `agent_loop()`, `validate_tool_pairing()`, `truncate_messages()`, `call_llm()`, `dispatch_tool_calls()` |
 | `subagent` | Spawn child agents with fresh context | `Subagent::new()`, `run_subagent()`, `agent_loop()` |
@@ -64,7 +63,6 @@ src/
 | `context_compact` | Three-layer context compression pipeline | `ContextCompactor::new()`, `micro_compact()`, `auto_compact()`, `compact()` |
 | `agent_teams` | Persistent named teammates with thread-safe message bus | `MessageBus::new()`, `send()`, `read_inbox()`, `broadcast()`, `TeammateManager::new()`, `spawn()`, `list_all()` |
 | `team_protocols` | Shutdown and plan approval with DashMap request tracking | `ProtocolTracker::new()`, `create_shutdown_request()`, `respond_shutdown()`, `submit_plan()`, `review_plan()` |
-| `autonomous_agents` | Idle polling, auto task claiming, filesystem watching | `scan_unclaimed_tasks()`, `claim_task()`, `watch_tasks_dir()`, `poll_for_work()`, `make_identity_block()` |
 | `worktree` | Git worktree management with task binding and event bus | `WorktreeManager::new()`, `create()`, `remove()`, `keep()`, `run()`, `EventBus`, `TaskBinding` |
 | `background_tasks` | Background task execution with notification queue | `BackgroundTaskRunner::new()`, `spawn()`, `submit()`, `poll()` |
 | `task_system` | Persistent task management with dependency graph | `TaskSystem::new()`, `create_task()`, `update_status()`, `get_dependencies()` |
@@ -176,20 +174,22 @@ task_tests/
 
 | Module | Tests | What's covered |
 |--------|-------|----------------|
-| `tool_runners` | 13 | Path normalization, safe_path escapes, bash blocking, file CRUD |
+| `tool_runners` | 16 | Path normalization, safe_path escapes, bash blocking, file CRUD |
 | `llm_client` | 10 | Request body building, API error handling (401, 400, connection failure) |
-| `todo_manager` | 16 | Validation, render format, update/replacement, boundary conditions |
-| `tools` | 8 | TOOLS schema, dispatch routing |
-| `agent_loop` | 22 | Nag reminder, tool pairing, message truncation, corrupted history, API error extraction |
-| `logger` | 5 | SessionLogger file creation, timestamps, stderr output |
-| `subagent` | 3 | Subagent creation, tool dispatch, child tools |
+| `todo_manager` | 17 | Validation, render format, update/replacement, boundary conditions |
+| `tools` | 18 | TOOLS schema, dispatch routing |
+| `agent_loop` | 36 | Nag reminder, tool pairing, message truncation, corrupted history, API error extraction |
+| `logger` | 11 | SessionLogger file creation, timestamps, stderr output |
+| `subagent` | 19 | Subagent creation, tool dispatch, child tools |
 | `skill_loading` | 7 | Frontmatter parsing, skill loader, skill agent, system prompt |
 | `context_compact` | 5 | Token estimation, micro_compact, tool dispatch, compactor creation |
-| `agent_teams` | 18 | Message bus, send/read/broadcast, teammate manager, spawn, persistence |
+| `agent_teams` | 16 | Message bus, send/read/broadcast, teammate manager, spawn, persistence |
 | `team_protocols` | 17 | Shutdown protocol, plan approval, concurrent tracking, serialization |
-| `autonomous_agents` | 16 | Task scanning, claiming, identity blocks, polling, filesystem watching |
-| `worktree` | 21 | Event bus, index, task binding, name validation, worktree manager |
-| `e2e_test` | 3 | Test runner, test result tracking with tokens and steps |
+| `worktree` | 20 | Event bus, index, task binding, name validation, worktree manager |
+| `text_util` | 4 | Unicode-safe truncation with and without ellipsis |
+| `bin_core::dispatch` | 5 | Tool dispatch routing, unknown/idle/compact handlers |
+
+Total: **214 tests** (210 unit + 4 CLI integration). Run `cargo test` to verify.
 
 ## End-to-End Tests
 
