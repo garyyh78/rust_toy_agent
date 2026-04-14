@@ -1,11 +1,6 @@
-use crate::llm_client::AnthropicClient;
-use crate::tool_runners::{dispatch_basic_file_tool, WorkdirRoot};
-use crate::tools::skill_agent_tools;
-use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Skill metadata
 #[derive(Debug, Clone)]
 pub struct SkillMeta {
     pub name: String,
@@ -13,7 +8,6 @@ pub struct SkillMeta {
     pub tags: String,
 }
 
-/// Skill content
 #[derive(Debug, Clone)]
 pub struct Skill {
     pub meta: SkillMeta,
@@ -21,9 +15,6 @@ pub struct Skill {
     pub path: String,
 }
 
-/// SkillLoader - Two-layer skill injection that avoids bloating the system prompt.
-/// Layer 1 (cheap): skill names in system prompt (~100 tokens/skill)
-/// Layer 2 (on demand): full skill body in tool_result
 pub struct SkillLoader {
     skills_dir: String,
     skills: HashMap<String, Skill>,
@@ -39,7 +30,6 @@ impl SkillLoader {
         loader
     }
 
-    /// Load all skills from the skills directory
     fn load_all(&mut self) {
         let skills_dir = self.skills_dir.clone();
         let skills_path = Path::new(&skills_dir);
@@ -52,7 +42,6 @@ impl SkillLoader {
         self.skills = skills;
     }
 
-    /// Recursively walk directory to find SKILL.md files (static version)
     fn walk_directory_static(dir: &Path, skills: &mut HashMap<String, Skill>) {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
@@ -79,7 +68,6 @@ impl SkillLoader {
         }
     }
 
-    /// Parse YAML frontmatter between --- delimiters
     fn parse_frontmatter_static(text: &str) -> (SkillMeta, String) {
         let parts: Vec<&str> = text.splitn(3, "---\n").collect();
         if parts.len() < 3 {
@@ -123,7 +111,6 @@ impl SkillLoader {
         )
     }
 
-    /// Layer 1: short descriptions for the system prompt
     pub fn get_descriptions(&self) -> String {
         if self.skills.is_empty() {
             return "(no skills available)".to_string();
@@ -141,7 +128,6 @@ impl SkillLoader {
         lines.join("\n")
     }
 
-    /// Layer 2: full skill body returned in tool_result
     pub fn get_content(&self, name: &str) -> String {
         match self.skills.get(name) {
             Some(skill) => format!("<skill name=\"{}\">\n{}\n</skill>", name, skill.body),
@@ -156,77 +142,14 @@ impl SkillLoader {
         }
     }
 
-    /// Get list of available skill names (sorted alphabetically)
     pub fn list_skills(&self) -> Vec<&str> {
         let mut skills: Vec<&str> = self.skills.keys().map(|k| k.as_str()).collect();
         skills.sort();
         skills
     }
 
-    /// Check if a skill exists
     pub fn has_skill(&self, name: &str) -> bool {
         self.skills.contains_key(name)
-    }
-}
-
-/// Skill loading agent with tools
-#[allow(dead_code)]
-pub struct SkillAgent {
-    client: AnthropicClient,
-    workdir: String,
-    model: String,
-    skill_loader: SkillLoader,
-    tools: Json,
-}
-
-impl SkillAgent {
-    pub fn new(
-        client: AnthropicClient,
-        workdir: String,
-        model: String,
-        skills_dir: String,
-    ) -> Self {
-        let skill_loader = SkillLoader::new(&skills_dir);
-        let tools = Json::Array(skill_agent_tools());
-
-        Self {
-            client,
-            workdir,
-            model,
-            skill_loader,
-            tools,
-        }
-    }
-
-    #[allow(dead_code)]
-    /// Dispatch a tool call
-    fn dispatch_tool(&self, tool_name: &str, input: &Json) -> String {
-        let workdir = Path::new(&self.workdir);
-        let wd = match WorkdirRoot::new(workdir) {
-            Ok(w) => w,
-            Err(e) => return format!("Error: workdir: {}", e),
-        };
-        if let Some(result) = dispatch_basic_file_tool(tool_name, input, &wd) {
-            return result;
-        }
-        match tool_name {
-            "load_skill" => {
-                let name = input["name"].as_str().unwrap_or("");
-                self.skill_loader.get_content(name)
-            }
-            _ => format!("Unknown tool: {}", tool_name),
-        }
-    }
-
-    /// Get system prompt with skill descriptions
-    pub fn get_system_prompt(&self) -> String {
-        format!(
-            "You are a coding agent at {}.\n\
-             Use load_skill to access specialized knowledge before tackling unfamiliar topics.\n\n\
-             Skills available:\n{}",
-            self.workdir,
-            self.skill_loader.get_descriptions()
-        )
     }
 }
 
@@ -289,65 +212,5 @@ mod tests {
 
         let unknown = loader.get_content("unknown");
         assert!(unknown.contains("Error: Unknown skill"));
-    }
-
-    #[test]
-    fn test_skill_agent_creation() {
-        let client = AnthropicClient::new("test", "https://api.anthropic.com");
-        let agent = SkillAgent::new(
-            client,
-            "/tmp".to_string(),
-            "test-model".to_string(),
-            "/nonexistent".to_string(),
-        );
-
-        assert_eq!(agent.workdir, "/tmp");
-        assert_eq!(agent.model, "test-model");
-
-        // Verify tools
-        let tools = agent.tools.as_array().unwrap();
-        assert_eq!(tools.len(), 5);
-        assert_eq!(tools[4]["name"], "load_skill");
-    }
-
-    #[test]
-    fn test_skill_agent_dispatch() {
-        let client = AnthropicClient::new("test", "https://api.anthropic.com");
-        let agent = SkillAgent::new(
-            client,
-            "/tmp".to_string(),
-            "test-model".to_string(),
-            "/nonexistent".to_string(),
-        );
-
-        // Test bash tool
-        let input = serde_json::json!({"command": "echo hello"});
-        let result = agent.dispatch_tool("bash", &input);
-        assert!(result.contains("hello"));
-
-        // Test load_skill (nonexistent)
-        let input = serde_json::json!({"name": "nonexistent"});
-        let result = agent.dispatch_tool("load_skill", &input);
-        assert!(result.contains("Error: Unknown skill"));
-
-        // Test unknown tool
-        let result = agent.dispatch_tool("unknown", &serde_json::json!({}));
-        assert!(result.contains("Unknown tool"));
-    }
-
-    #[test]
-    fn test_skill_agent_system_prompt() {
-        let client = AnthropicClient::new("test", "https://api.anthropic.com");
-        let agent = SkillAgent::new(
-            client,
-            "/tmp".to_string(),
-            "test-model".to_string(),
-            "/nonexistent".to_string(),
-        );
-
-        let system = agent.get_system_prompt();
-        assert!(system.contains("coding agent at /tmp"));
-        assert!(system.contains("load_skill"));
-        assert!(system.contains("no skills available"));
     }
 }

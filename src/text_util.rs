@@ -5,7 +5,10 @@
 
 /// Return a prefix of `s` containing at most `max_chars` Unicode scalar values.
 pub fn truncate_chars(s: &str, max_chars: usize) -> String {
-    s.chars().take(max_chars).collect()
+    match s.char_indices().nth(max_chars) {
+        Some((i, _)) => s[..i].to_string(),
+        None => s.to_string(),
+    }
 }
 
 /// Same as `truncate_chars` but appends "..." if truncated.
