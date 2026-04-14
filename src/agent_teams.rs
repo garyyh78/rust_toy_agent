@@ -98,14 +98,13 @@ impl MessageBus {
     ) -> Result<String, String> {
         if !VALID_MSG_TYPES.contains(&msg_type) {
             return Err(format!(
-                "Invalid type '{}'. Valid: {:?}",
-                msg_type, VALID_MSG_TYPES
+                "Invalid type '{msg_type}'. Valid: {VALID_MSG_TYPES:?}"
             ));
         }
         let msg = Message::new(sender, content, msg_type);
         let mut inbox = self.inbox.write().unwrap();
         inbox.entry(to.to_string()).or_default().push(msg);
-        Ok(format!("Sent {} to {}", msg_type, to))
+        Ok(format!("Sent {msg_type} to {to}"))
     }
 
     /// Read and drain a teammate's inbox.

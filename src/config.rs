@@ -23,6 +23,9 @@ pub const MAX_ROUNDS: u32 = 50;
 /// Token threshold for triggering auto-compaction.
 pub const TOKEN_THRESHOLD: usize = 100_000;
 
+/// Token threshold for triggering micro-compaction (smaller, more aggressive).
+pub const COMPACT_THRESHOLD: usize = 50_000;
+
 /// Teammate agents follow subagent conventions.
 pub const TEAMMATE_MAX_TOKENS: u32 = 8_000;
 

@@ -5,16 +5,13 @@
 //!
 //! Key insight: "Fire and forget -- the agent doesn't block while the command runs."
 
-use crate::config::BASH_ENV_ALLOWLIST;
+use crate::config::{BASH_ENV_ALLOWLIST, MAX_TOOL_OUTPUT_BYTES};
 use crate::text_util::truncate_chars;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::thread;
 use tokio::sync::mpsc;
-
-/// Maximum output size for background task results (50KB).
-const MAX_BG_OUTPUT_SIZE: usize = 50_000;
 
 fn build_command(command: &str, workdir: &std::path::Path) -> std::process::Command {
     let mut cmd = std::process::Command::new("sh");
@@ -104,11 +101,11 @@ impl BackgroundManager {
                     let text = String::from_utf8_lossy(&combined).trim().to_string();
                     (status, text)
                 }
-                Err(e) => ("error".to_string(), format!("Error: {}", e)),
+                Err(e) => ("error".to_string(), format!("Error: {e}")),
             };
 
-            let output_truncated = if output.len() > MAX_BG_OUTPUT_SIZE {
-                truncate_chars(&output, MAX_BG_OUTPUT_SIZE)
+            let output_truncated = if output.len() > MAX_TOOL_OUTPUT_BYTES {
+                truncate_chars(&output, MAX_TOOL_OUTPUT_BYTES)
             } else {
                 output.clone()
             };
@@ -149,7 +146,7 @@ impl BackgroundManager {
                     result
                 );
             } else {
-                return format!("Error: Unknown task {}", tid);
+                return format!("Error: Unknown task {tid}");
             }
         }
 

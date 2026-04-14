@@ -27,7 +27,7 @@
 use crate::todo_manager::TodoManager;
 use crate::tool_runners::{run_bash, run_edit, run_read, run_write, WorkdirRoot};
 use serde_json::Value as Json;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 // -- Tool JSON schema builders --
 // Each function returns a serde_json::Value for a specific tool.
@@ -594,7 +594,7 @@ pub fn dispatch_tools(
     tool_name: &str,
     input: &Json,
     workdir: &WorkdirRoot,
-    todo: &Arc<Mutex<TodoManager>>,
+    todo: &Mutex<TodoManager>,
 ) -> (Option<String>, bool) {
     match tool_name {
         "bash" => (
@@ -636,7 +636,7 @@ pub fn dispatch_tools(
                 .unwrap_or(&[]);
             let mut mgr = match todo.lock() {
                 Ok(m) => m,
-                Err(e) => return (Some(format!("Error: lock poisoned: {}", e)), true),
+                Err(e) => return (Some(format!("Error: lock poisoned: {e}")), true),
             };
             match mgr.update(items) {
                 Ok(rendered) => (Some(rendered), true),

@@ -40,7 +40,7 @@ use crate::tool_runners::WorkdirRoot;
 use crate::tools::dispatch_tools;
 use serde_json::json;
 use serde_json::Value as Json;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 // -- Agent loop with nag reminder --
 // Each iteration: call LLM, collect tool_use blocks, dispatch them,
@@ -202,7 +202,7 @@ fn log_api_error(logger: &mut SessionLogger, error_str: &str) {
 fn dispatch_tool_calls(
     content: &Json,
     workdir: &WorkdirRoot,
-    todo: &Arc<Mutex<TodoManager>>,
+    todo: &Mutex<TodoManager>,
     logger: &mut SessionLogger,
 ) -> (Vec<Json>, bool) {
     let mut results = Vec::new();
@@ -263,7 +263,7 @@ pub async fn agent_loop(
     tools: &Json,
     messages: &mut Messages,
     workdir: &WorkdirRoot,
-    todo: &Arc<Mutex<TodoManager>>,
+    todo: &Mutex<TodoManager>,
     logger: &mut SessionLogger,
 ) -> (u64, u64, u32) {
     let mut total_input_tokens: u64 = 0;
@@ -287,14 +287,13 @@ pub async fn agent_loop(
         truncate_messages(messages, 8);
 
         // Step 3: call the LLM
-        let response = match call_llm(client, model, system, messages, tools, logger).await {
-            Some(r) => r,
-            None => return (total_input_tokens, total_output_tokens, round as u32),
+        let Some(response) = call_llm(client, model, system, messages, tools, logger).await else {
+            return (total_input_tokens, total_output_tokens, round as u32);
         };
 
         // Step 4: parse response and track tokens
         let stop_reason = response["stop_reason"].as_str().unwrap_or("").to_string();
-        let content = response["content"].clone();
+        let content = response["content"].take();
 
         let usage = &response["usage"];
         let input_tokens = usage["input_tokens"].as_u64().unwrap_or(0);
@@ -306,10 +305,11 @@ pub async fn agent_loop(
             &format!("{input_tokens} in / {output_tokens} out"),
         );
         logger.log_info("stop", &stop_reason);
+        tracing::info!(stop_reason = %stop_reason, "LLM round complete");
         eprintln!();
 
         // Append assistant response to history
-        messages.push(json!({"role": "assistant", "content": content.clone()}));
+        messages.push(json!({"role": "assistant", "content": content}));
 
         // Step 5: if no tool use, we're done
         if stop_reason != "tool_use" {

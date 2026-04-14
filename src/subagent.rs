@@ -1,7 +1,7 @@
 use crate::config::{MAX_TOOL_OUTPUT_BYTES, SUBAGENT_MAX_TOKENS};
 use crate::llm_client::AnthropicClient;
 use crate::tool_runners::{dispatch_basic_file_tool, WorkdirRoot};
-use crate::tools::{child_agent_tools, parent_agent_tools};
+use crate::tools::child_agent_tools;
 use serde_json::Value as Json;
 use std::path::Path;
 
@@ -11,39 +11,22 @@ const MAX_SUBAGENT_TURNS: u32 = 30;
 /// Subagent system that spawns child agents with fresh context.
 /// The child works in its own context, sharing the filesystem,
 /// then returns only a summary to the parent.
-#[allow(dead_code)]
 pub struct Subagent {
     client: AnthropicClient,
     workdir: String,
     model: String,
     child_tools: Json,
-    parent_tools: Json,
 }
 
 impl Subagent {
     pub fn new(client: AnthropicClient, workdir: String, model: String) -> Self {
         let child_tools = Json::Array(child_agent_tools());
 
-        let parent_tools_array = parent_agent_tools();
-        let parent_tools = Json::Array(
-            parent_tools_array
-                .iter()
-                .filter(|t| {
-                    t.get("name")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s != "todo")
-                        .unwrap_or(true)
-                })
-                .cloned()
-                .collect(),
-        );
-
         Self {
             client,
             workdir,
             model,
             child_tools,
-            parent_tools,
         }
     }
 
@@ -52,7 +35,7 @@ impl Subagent {
         let workdir = Path::new(&self.workdir);
         let wd = match WorkdirRoot::new(workdir) {
             Ok(w) => w,
-            Err(e) => return format!("Error: workdir: {}", e),
+            Err(e) => return format!("Error: workdir: {e}"),
         };
         dispatch_basic_file_tool(tool_name, input, &wd)
             .unwrap_or_else(|| format!("Unknown tool: {tool_name}"))
@@ -178,10 +161,6 @@ mod tests {
 
         let child_tools = sub.child_tools.as_array().unwrap();
         assert_eq!(child_tools.len(), 4);
-
-        let parent_tools = sub.parent_tools.as_array().unwrap();
-        assert_eq!(parent_tools.len(), 5);
-        assert_eq!(parent_tools[4]["name"], "task");
     }
 
     #[test]
@@ -198,7 +177,7 @@ mod tests {
         let (_tmp, workdir) = tmp_workdir();
         let _sub = test_subagent(&workdir);
 
-        let tools_with_malformed = vec![
+        let tools_with_malformed: [serde_json::Value; 5] = [
             serde_json::json!({"name": "bash", "description": "Run command"}),
             serde_json::json!({"name": 123, "description": "name is a number"}),
             serde_json::json!({"description": "no name field"}),
@@ -242,58 +221,6 @@ mod tests {
         assert!(names.contains(&"read_file"));
         assert!(names.contains(&"write_file"));
         assert!(names.contains(&"edit_file"));
-    }
-
-    #[test]
-    fn test_parent_tools_has_task_with_correct_schema() {
-        let (_tmp, workdir) = tmp_workdir();
-        let sub = test_subagent(&workdir);
-
-        let parent_tools = sub.parent_tools.as_array().unwrap();
-        let task_tool = parent_tools.iter().find(|t| t["name"] == "task").unwrap();
-
-        let schema = &task_tool["input_schema"];
-        assert_eq!(schema["type"], "object");
-        assert!(schema["properties"]["prompt"].is_object());
-        assert!(schema["properties"]["description"].is_object());
-
-        let required: Vec<&str> = schema["required"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect();
-        assert!(required.contains(&"prompt"));
-    }
-
-    #[test]
-    fn test_parent_tools_includes_all_child_tools() {
-        let sub = test_subagent("/tmp");
-
-        let child_names: Vec<&str> = sub
-            .child_tools
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|t| t["name"].as_str().unwrap())
-            .collect();
-
-        let parent_names: Vec<&str> = sub
-            .parent_tools
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|t| t["name"].as_str().unwrap())
-            .collect();
-
-        for name in &child_names {
-            assert!(
-                parent_names.contains(name),
-                "parent missing child tool: {name}"
-            );
-        }
-        assert!(parent_names.contains(&"task"));
-        assert!(!parent_names.contains(&"todo"));
     }
 
     // -- dispatch_child_tool: happy paths --

@@ -10,7 +10,7 @@ use serde_json::Value as Json;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Instant;
 
 #[derive(Debug, Clone)]
@@ -104,7 +104,7 @@ pub async fn run_test(
     model: &str,
     test_case: &TestCase,
     workdir: &WorkdirRoot,
-    todo: &Arc<Mutex<TodoManager>>,
+    todo: &Mutex<TodoManager>,
     logger: &mut SessionLogger,
 ) -> TestResult {
     let start_time = Instant::now();
@@ -167,10 +167,10 @@ Prefer tools over prose.",
 
 pub fn load_test_case(path: &Path) -> Result<TestCase, String> {
     let content =
-        std::fs::read_to_string(path).map_err(|e| format!("Failed to read test file: {}", e))?;
+        std::fs::read_to_string(path).map_err(|e| format!("Failed to read test file: {e}"))?;
 
     let json: Json =
-        serde_json::from_str(&content).map_err(|e| format!("Failed to parse test JSON: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse test JSON: {e}"))?;
 
     let name = json["name"]
         .as_str()

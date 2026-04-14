@@ -81,10 +81,9 @@ impl TaskManager {
     }
 
     fn load(&self, task_id: u32) -> Result<Task, String> {
-        let path = self.dir.join(format!("task_{}.json", task_id));
-        let content =
-            fs::read_to_string(&path).map_err(|e| format!("Failed to read task: {}", e))?;
-        serde_json::from_str(&content).map_err(|e| format!("Failed to parse task: {}", e))
+        let path = self.dir.join(format!("task_{task_id}.json"));
+        let content = fs::read_to_string(&path).map_err(|e| format!("Failed to read task: {e}"))?;
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse task: {e}"))
     }
 
     fn save(&self, task: &Task) -> std::io::Result<()> {
@@ -116,7 +115,7 @@ impl TaskManager {
 
         if let Some(s) = status {
             if !["pending", "in_progress", "completed"].contains(&s) {
-                return Err(format!("Invalid status: {}", s));
+                return Err(format!("Invalid status: {s}"));
             }
             task.status = s.to_string();
             if s == "completed" {
@@ -126,13 +125,13 @@ impl TaskManager {
 
         if let Some(blocked) = add_blocked_by {
             task.blocked_by.extend(blocked);
-            task.blocked_by.sort();
+            task.blocked_by.sort_unstable();
             task.blocked_by.dedup();
         }
 
         if let Some(blocks) = add_blocks {
             task.blocks.extend(blocks.clone());
-            task.blocks.sort();
+            task.blocks.sort_unstable();
             task.blocks.dedup();
 
             for blocked_id in &blocks {
@@ -156,7 +155,11 @@ impl TaskManager {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name.starts_with("task_") && name.ends_with(".json") {
+                    if name.starts_with("task_")
+                        && path
+                            .extension()
+                            .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+                    {
                         if let Ok(content) = fs::read_to_string(&path) {
                             if let Ok(mut task) = serde_json::from_str::<Task>(&content) {
                                 if task.blocked_by.contains(&completed_id) {
@@ -180,7 +183,11 @@ impl TaskManager {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    if name.starts_with("task_") && name.ends_with(".json") {
+                    if name.starts_with("task_")
+                        && path
+                            .extension()
+                            .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+                    {
                         if let Ok(content) = fs::read_to_string(&path) {
                             if let Ok(task) = serde_json::from_str::<Task>(&content) {
                                 tasks.insert(task.id, task);

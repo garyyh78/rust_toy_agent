@@ -144,7 +144,7 @@ impl SkillLoader {
 
     pub fn list_skills(&self) -> Vec<&str> {
         let mut skills: Vec<&str> = self.skills.keys().map(|k| k.as_str()).collect();
-        skills.sort();
+        skills.sort_unstable();
         skills
     }
 

@@ -55,12 +55,12 @@ fn prune_old_logs(dir: &Path) -> std::io::Result<()> {
 
 pub fn log_section(title: &str) {
     eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    eprintln!(" {}", title);
+    eprintln!(" {title}");
     eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 }
 
 pub fn log_info(label: &str, value: &str) {
-    eprintln!("  {:<12} {}", label, value);
+    eprintln!("  {label:<12} {value}");
 }
 
 pub fn log_step(step: &str, detail: &str) {

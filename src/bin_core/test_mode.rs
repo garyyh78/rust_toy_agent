@@ -4,7 +4,7 @@ use crate::todo_manager::TodoManager;
 use crate::tool_runners::WorkdirRoot;
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
@@ -98,7 +98,7 @@ pub async fn run_swe_bench_mode(instance_id: &str) {
     eprintln!("║          SWE-bench Evaluation Mode                           ║");
     eprintln!("╚══════════════════════════════════════════════════════════════╝");
     eprintln!();
-    eprintln!("  Instance: {}", instance_id);
+    eprintln!("  Instance: {instance_id}");
     eprintln!("  Output: {}", swe_dir.display());
     eprintln!();
 
@@ -134,7 +134,15 @@ pub async fn run_swe_bench_mode(instance_id: &str) {
     let model = env::var("MODEL_ID").expect("MODEL_ID not set");
 
     let todo = Arc::new(Mutex::new(TodoManager::new()));
-    let mut logger = crate::logger::SessionLogger::stderr_only();
+    if let Err(e) = std::fs::create_dir_all(&results_dir) {
+        tracing::error!(error = %e, "failed to create results directory");
+    }
+    let log_path = results_dir.join(format!("session_{instance_id}.log"));
+    let mut logger =
+        crate::logger::SessionLogger::new(log_path.to_str().unwrap()).unwrap_or_else(|e| {
+            tracing::error!(error = %e, "failed to create session logger, falling back to stderr");
+            crate::logger::SessionLogger::stderr_only()
+        });
 
     let repo_dir = swe_dir.join("repo");
     let workdir_root = WorkdirRoot::new(&repo_dir).expect("Failed to create workdir root");
@@ -163,7 +171,7 @@ pub async fn run_swe_bench_mode(instance_id: &str) {
     eprintln!();
     eprintln!(
         "Patch extracted to: {}",
-        results_dir.join(format!("{}.jsonl", instance_id)).display()
+        results_dir.join(format!("{instance_id}.jsonl")).display()
     );
     eprintln!();
     eprintln!("To evaluate, run:");
@@ -171,15 +179,15 @@ pub async fn run_swe_bench_mode(instance_id: &str) {
     eprintln!("    --dataset_name princeton-nlp/SWE-bench_Lite \\");
     eprintln!(
         "    --predictions_path {} \\",
-        results_dir.join(format!("{}.jsonl", instance_id)).display()
+        results_dir.join(format!("{instance_id}.jsonl")).display()
     );
     eprintln!("    --max_workers 1 \\");
-    eprintln!("    --instance_ids {} \\", instance_id);
+    eprintln!("    --instance_ids {instance_id} \\");
     eprintln!("    --run_id rust_toy_agent_test");
 }
 
-fn setup_swe_instance(workdir: &PathBuf, instance_id: &str) {
-    eprintln!("Setting up SWE-bench instance: {}", instance_id);
+fn setup_swe_instance(workdir: &Path, instance_id: &str) {
+    eprintln!("Setting up SWE-bench instance: {instance_id}");
 
     let repo_dir = workdir.join("repo");
     if repo_dir.exists() {
@@ -202,7 +210,7 @@ fn setup_swe_instance(workdir: &PathBuf, instance_id: &str) {
             std::process::exit(1);
         }
         Err(e) => {
-            eprintln!("  Clone error: {}", e);
+            eprintln!("  Clone error: {e}");
             std::process::exit(1);
         }
     }
@@ -223,7 +231,7 @@ fn setup_swe_instance(workdir: &PathBuf, instance_id: &str) {
             std::process::exit(1);
         }
         Err(e) => {
-            eprintln!("  Checkout error: {}", e);
+            eprintln!("  Checkout error: {e}");
             std::process::exit(1);
         }
     }
@@ -254,7 +262,7 @@ fn get_problem_statement(instance_id: &str) -> String {
             at least some test fails with: sqlite3.OperationalError: database is locked."
                 .to_string();
         }
-        format!("Fix the bug in instance: {}", instance_id)
+        format!("Fix the bug in instance: {instance_id}")
     })
 }
 
@@ -267,15 +275,14 @@ fn fetch_problem_from_huggingface(instance_id: &str) -> Result<String, String> {
 from datasets import load_dataset
 ds = load_dataset('princeton-nlp/SWE-bench_Lite', split='test')
 for item in ds:
-    if item['instance_id'] == '{}':
+    if item['instance_id'] == '{instance_id}':
         print(item['problem_statement'].replace('\n', '\\n'))
         break
-"#,
-                instance_id
+"#
             ),
         ])
         .output()
-        .map_err(|e| format!("Failed to run python: {}", e))?;
+        .map_err(|e| format!("Failed to run python: {e}"))?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
@@ -284,15 +291,14 @@ for item in ds:
     }
 }
 
-fn extract_patch_from_workdir(workdir: &PathBuf) -> String {
-    let repo_dir = workdir.join("repo");
-    if !repo_dir.exists() {
+fn extract_patch_from_workdir(workdir: &Path) -> String {
+    if !workdir.exists() {
         return String::new();
     }
 
     let output = Command::new("git")
         .args(["diff"])
-        .current_dir(&repo_dir)
+        .current_dir(workdir)
         .output();
 
     match output {
@@ -313,7 +319,7 @@ fn save_predictions(instance_id: &str, model: &str, patch: &str, results_dir: &P
         "model_patch": patch
     });
 
-    let filepath = results_dir.join(format!("{}.jsonl", instance_id));
+    let filepath = results_dir.join(format!("{instance_id}.jsonl"));
     if let Ok(json_str) = serde_json::to_string(&pred) {
         let _ = std::fs::write(&filepath, json_str);
     }

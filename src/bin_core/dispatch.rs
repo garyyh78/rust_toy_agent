@@ -32,7 +32,7 @@ pub async fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
                 .unwrap_or(&[]);
             let mut mgr = match state.todo.lock() {
                 Ok(m) => m,
-                Err(e) => return format!("Error: lock poisoned: {}", e),
+                Err(e) => return format!("Error: lock poisoned: {e}"),
             };
             match mgr.update(items) {
                 Ok(r) => r,
@@ -63,7 +63,7 @@ pub async fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
         "task_create" => {
             let mut mgr = match state.task_mgr.lock() {
                 Ok(m) => m,
-                Err(e) => return format!("Error: lock poisoned: {}", e),
+                Err(e) => return format!("Error: lock poisoned: {e}"),
             };
             match mgr.create(
                 input["subject"].as_str().unwrap_or(""),
@@ -76,7 +76,7 @@ pub async fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
         "task_get" => {
             let mgr = match state.task_mgr.lock() {
                 Ok(m) => m,
-                Err(e) => return format!("Error: lock poisoned: {}", e),
+                Err(e) => return format!("Error: lock poisoned: {e}"),
             };
             match mgr.get(input["task_id"].as_u64().unwrap_or(0) as u32) {
                 Ok(r) => r,
@@ -86,7 +86,7 @@ pub async fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
         "task_update" => {
             let mut mgr = match state.task_mgr.lock() {
                 Ok(m) => m,
-                Err(e) => return format!("Error: lock poisoned: {}", e),
+                Err(e) => return format!("Error: lock poisoned: {e}"),
             };
             match mgr.update(
                 input["task_id"].as_u64().unwrap_or(0) as u32,
@@ -109,7 +109,7 @@ pub async fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
         "task_list" => {
             let mgr = match state.task_mgr.lock() {
                 Ok(m) => m,
-                Err(e) => return format!("Error: lock poisoned: {}", e),
+                Err(e) => return format!("Error: lock poisoned: {e}"),
             };
             mgr.list_all()
         }
@@ -119,7 +119,7 @@ pub async fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
             let prompt = input["prompt"].as_str().unwrap_or("");
             let mut team = match state.team.lock() {
                 Ok(t) => t,
-                Err(e) => return format!("Error: lock poisoned: {}", e),
+                Err(e) => return format!("Error: lock poisoned: {e}"),
             };
             match team.spawn(name, role) {
                 Ok(msg) => {
@@ -158,7 +158,7 @@ pub async fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
         "list_teammates" => {
             let team = match state.team.lock() {
                 Ok(t) => t,
-                Err(e) => return format!("Error: lock poisoned: {}", e),
+                Err(e) => return format!("Error: lock poisoned: {e}"),
             };
             team.list_all()
         }
@@ -178,7 +178,7 @@ pub async fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
         "broadcast" => {
             let team = match state.team.lock() {
                 Ok(t) => t,
-                Err(e) => return format!("Error: lock poisoned: {}", e),
+                Err(e) => return format!("Error: lock poisoned: {e}"),
             };
             let names = team.member_names();
             match state
@@ -210,7 +210,7 @@ pub async fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
         "claim_task" => {
             let mut mgr = match state.task_mgr.lock() {
                 Ok(m) => m,
-                Err(e) => return format!("Error: lock poisoned: {}", e),
+                Err(e) => return format!("Error: lock poisoned: {e}"),
             };
             match mgr.update(
                 input["task_id"].as_u64().unwrap_or(0) as u32,

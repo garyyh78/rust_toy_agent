@@ -54,7 +54,7 @@ impl WorkdirRoot {
     pub fn new(path: &Path) -> Result<Self, String> {
         let canonical = path
             .canonicalize()
-            .map_err(|e| format!("canonicalize workdir: {}", e))?;
+            .map_err(|e| format!("canonicalize workdir: {e}"))?;
         Ok(Self {
             original: path.to_path_buf(),
             canonical,
@@ -111,7 +111,7 @@ fn canonicalize_partial(p: &Path) -> Result<PathBuf, String> {
     }
     let canon = existing
         .canonicalize()
-        .map_err(|e| format!("canon: {}", e))?;
+        .map_err(|e| format!("canon: {e}"))?;
     let mut result = canon;
     if !suffix.as_os_str().is_empty() {
         result.push(&suffix);
@@ -127,7 +127,7 @@ pub fn safe_path(p: &str, workdir_root: &WorkdirRoot) -> Result<PathBuf, String>
     let joined = workdir.join(p);
     let resolved = canonicalize_partial(&joined)?;
     if !resolved.starts_with(workdir_canon) {
-        return Err(format!("path escapes sandbox: {}", p));
+        return Err(format!("path escapes sandbox: {p}"));
     }
     Ok(resolved)
 }
@@ -238,7 +238,9 @@ pub fn run_write(path: &str, content: &str, workdir_root: &WorkdirRoot) -> Strin
         Err(e) => format!("Error: {e}"),
         Ok(fp) => {
             if let Some(parent) = fp.parent() {
-                let _ = std::fs::create_dir_all(parent);
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    return format!("Error: mkdir {}: {}", parent.display(), e);
+                }
             }
             match std::fs::write(&fp, content) {
                 Ok(_) => format!("Wrote {} bytes to {}", content.len(), path),

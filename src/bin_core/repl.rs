@@ -55,7 +55,7 @@ pub async fn run_repl(state: State, metrics_out: Option<PathBuf>) {
     eprintln!("  Tools: 23 (bash, read, write, edit, TodoWrite, task, load_skill,");
     eprintln!("           compact, bg_run, bg_check, task CRUD, team, messaging,");
     eprintln!("           broadcast, shutdown, plan, idle, claim)");
-    eprintln!("  Session: {}", session_id);
+    eprintln!("  Session: {session_id}");
     eprintln!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     eprintln!();
 

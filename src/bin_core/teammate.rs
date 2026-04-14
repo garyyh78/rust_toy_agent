@@ -173,10 +173,10 @@ pub async fn teammate_loop(
     }
 
     // IDLE PHASE: poll for messages and unclaimed tasks
-    let mut team = match TeammateManager::new(&workdir.join(".team")) {
-        Ok(t) => t,
-        Err(_) => return,
+    let Ok(team) = TeammateManager::new(&workdir.join(".team")) else {
+        return;
     };
+    let mut team = team;
     team.set_status(&name, "idle");
 
     let idle_polls = (IDLE_TIMEOUT_SECS / POLL_INTERVAL_SECS.max(1)) as usize;

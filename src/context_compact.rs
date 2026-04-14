@@ -1,4 +1,4 @@
-use crate::config::SUMMARIZE_MAX_TOKENS;
+use crate::config::{COMPACT_THRESHOLD as COMPACT_TOKEN_THRESHOLD, SUMMARIZE_MAX_TOKENS};
 use crate::llm_client::AnthropicClient;
 use crate::tool_runners::{run_bash, run_edit, run_read, run_write, WorkdirRoot};
 use crate::tools::compactor_tools;
@@ -6,9 +6,6 @@ use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-/// Token threshold for triggering micro-compaction.
-const COMPACT_TOKEN_THRESHOLD: usize = 50_000;
 
 /// Truncate tool result previews to this length.
 const TOOL_RESULT_PREVIEW_LEN: usize = 100;
@@ -41,7 +38,7 @@ impl ContextCompactor {
             model,
             threshold: COMPACT_TOKEN_THRESHOLD,
             keep_recent: 3,
-            transcript_dir: format!("{}/.transcripts", workdir),
+            transcript_dir: format!("{workdir}/.transcripts"),
             tools,
         }
     }
@@ -108,7 +105,7 @@ impl ContextCompactor {
                                     .map(|s| s.as_str())
                                     .unwrap_or("unknown");
                                 result["content"] =
-                                    Json::String(format!("[Previous: used {}]", tool_name));
+                                    Json::String(format!("[Previous: used {tool_name}]"));
                             }
                         }
                     }
@@ -134,7 +131,7 @@ impl ContextCompactor {
             for msg in messages {
                 if let Ok(json) = serde_json::to_string(msg) {
                     use std::io::Write;
-                    if let Err(e) = writeln!(file, "{}", json) {
+                    if let Err(e) = writeln!(file, "{json}") {
                         tracing::error!(error = %e, "failed to write transcript");
                     }
                 }
@@ -202,7 +199,7 @@ impl ContextCompactor {
         let workdir = Path::new(&self.workdir);
         let wd = match WorkdirRoot::new(workdir) {
             Ok(w) => w,
-            Err(e) => return format!("Error: workdir: {}", e),
+            Err(e) => return format!("Error: workdir: {e}"),
         };
         match tool_name {
             "bash" => run_bash(input["command"].as_str().unwrap_or(""), workdir),
@@ -223,7 +220,7 @@ impl ContextCompactor {
                 &wd,
             ),
             "compact" => "Manual compression requested.".to_string(),
-            _ => format!("Unknown tool: {}", tool_name),
+            _ => format!("Unknown tool: {tool_name}"),
         }
     }
 }

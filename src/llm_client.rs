@@ -117,6 +117,7 @@ impl AnthropicClient {
 
     /// Override the retry budget (default 3). Zero disables retries entirely —
     /// useful for tests that want fast-fail behavior.
+    #[must_use]
     pub fn with_max_retries(mut self, retries: u32) -> Self {
         self.max_retries = retries;
         self
