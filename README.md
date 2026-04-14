@@ -217,17 +217,6 @@ cargo e2e-fib
 cargo e2e-prime
 ```
 
-### Latest Results (2026-04-02, deepseek-chat, commit `8c79bc7`)
-
-| Test | Status | Time (ms) | Tokens |
-|------|--------|-----------|--------|
-| `sum_1_to_n` | PASS | 85,795 | 9,519 |
-| `fibonacci_sum` | PASS | 130,229 | 19,231 |
-| `prime_sum` | FAIL* | 128,188 | 23,708 |
-| `literary_style_detection` | PASS | 189,549 | 42,004 |
-
-**3/4 passed.** \*`prime_sum` produced the correct answer (3682913) but the agent's final text response was verbose instead of printing only the number.
-
 Test results are saved to `task_tests/test_results/` with model name, commit hash, execution time, token counts, and step count.
 
 ## License

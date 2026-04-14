@@ -236,13 +236,58 @@ fn setup_swe_instance(workdir: &PathBuf, instance_id: &str) {
 }
 
 fn get_problem_statement(instance_id: &str) -> String {
-    if instance_id == "sympy__sympy-20590" {
-        return "The sympify function in SymPy does not handle negative zero correctly. \
-        When sympifying '-0.0', it returns 0 instead of -0.0. This causes issues when \
-        checking equality between values that should be distinct (0 and -0.0)."
-            .to_string();
+    let workdir = env::current_dir().unwrap();
+    let instance_file = workdir.join("swe_bench_instances.json");
+
+    if instance_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&instance_file) {
+            if let Ok(instances) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(problem) = instances
+                    .get(instance_id)
+                    .and_then(|v| v.get("problem_statement"))
+                    .and_then(|v| v.as_str())
+                {
+                    return problem.to_string();
+                }
+            }
+        }
     }
-    format!("Fix the bug in instance: {}", instance_id)
+
+    fetch_problem_from_huggingface(instance_id).unwrap_or_else(|_| {
+        if instance_id == "sympy__sympy-20590" {
+            return "The sympify function in SymPy does not handle negative zero correctly. \
+            When sympifying '-0.0', it returns 0 instead of -0.0. This causes issues when \
+            checking equality between values that should be distinct (0 and -0.0)."
+                .to_string();
+        }
+        format!("Fix the bug in instance: {}", instance_id)
+    })
+}
+
+fn fetch_problem_from_huggingface(instance_id: &str) -> Result<String, String> {
+    let output = Command::new("python3")
+        .args([
+            "-c",
+            &format!(
+                r#"
+from datasets import load_dataset
+ds = load_dataset('princeton-nlp/SWE-bench_Lite', split='test')
+for item in ds:
+    if item['instance_id'] == '{}':
+        print(item['problem_statement'].replace('\n', '\\n'))
+        break
+"#,
+                instance_id
+            ),
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run python: {}", e))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).to_string())
+    }
 }
 
 fn extract_patch_from_workdir(workdir: &PathBuf) -> String {
