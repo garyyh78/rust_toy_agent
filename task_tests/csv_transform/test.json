@@ -1,0 +1,6 @@
+{
+  "name": "csv_transform",
+  "prompt": "In the workspace directory, there is a CSV file called sales_data.csv with columns: product,region,units_sold,revenue. Write a Python script that reads this CSV, computes the total revenue for the 'West' region, and prints only that total as an integer (no decimals, no commas). Do not round - the answer is exact.",
+  "expected_output": "47850",
+  "language": "python"
+}
