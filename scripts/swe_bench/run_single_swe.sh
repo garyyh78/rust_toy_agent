@@ -28,11 +28,11 @@ echo ""
 # Check if swebench is installed
 if ! python3 -c "import swebench" 2>/dev/null; then
     echo "Installing swebench..."
-    pip install swebench
+    pip3 install swebench
 fi
 
 # Run evaluation
-python -m swebench.harness.run_evaluation \
+python3 -m swebench.harness.run_evaluation \
     --dataset_name princeton-nlp/SWE-bench_Lite \
     --predictions_path "$PREDICTION_FILE" \
     --max_workers 1 \
