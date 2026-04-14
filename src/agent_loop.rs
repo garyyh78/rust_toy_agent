@@ -36,10 +36,10 @@ use crate::llm_client::AnthropicClient;
 use crate::logger::SessionLogger;
 use crate::text_util::truncate_chars;
 use crate::todo_manager::TodoManager;
+use crate::tool_runners::WorkdirRoot;
 use crate::tools::dispatch_tools;
 use serde_json::json;
 use serde_json::Value as Json;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 // -- Agent loop with nag reminder --
@@ -201,7 +201,7 @@ fn log_api_error(logger: &mut SessionLogger, error_str: &str) {
 /// Returns the result blocks and whether the todo tool was used.
 fn dispatch_tool_calls(
     content: &Json,
-    workdir: &Path,
+    workdir: &WorkdirRoot,
     todo: &Arc<Mutex<TodoManager>>,
     logger: &mut SessionLogger,
 ) -> (Vec<Json>, bool) {
@@ -262,7 +262,7 @@ pub async fn agent_loop(
     system: &str,
     tools: &Json,
     messages: &mut Messages,
-    workdir: &Path,
+    workdir: &WorkdirRoot,
     todo: &Arc<Mutex<TodoManager>>,
     logger: &mut SessionLogger,
 ) -> (u64, u64, u32) {

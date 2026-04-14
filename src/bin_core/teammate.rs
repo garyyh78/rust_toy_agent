@@ -7,7 +7,7 @@ use crate::llm_client::AnthropicClient;
 use crate::task_system::TaskManager;
 use crate::team_protocols::ProtocolTracker;
 use crate::todo_manager::TodoManager;
-use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
+use crate::tool_runners::{run_bash, run_edit, run_read, run_write, WorkdirRoot};
 use crate::tools::teammate_tools;
 use serde_json::Value as Json;
 use std::path::PathBuf;
@@ -28,6 +28,13 @@ pub async fn teammate_loop(
     team_name: String,
 ) {
     let _todo = TodoManager::new();
+    let wd = match WorkdirRoot::new(&workdir) {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to create workdir root");
+            return;
+        }
+    };
     let compactor = ContextCompactor::new(
         AnthropicClient::new(&client.api_key, &client.base_url),
         workdir.to_string_lossy().to_string(),
@@ -124,18 +131,18 @@ pub async fn teammate_loop(
                         "read_file" => run_read(
                             input["path"].as_str().unwrap_or(""),
                             input["limit"].as_u64().map(|n| n as usize),
-                            &workdir,
+                            &wd,
                         ),
                         "write_file" => run_write(
                             input["path"].as_str().unwrap_or(""),
                             input["content"].as_str().unwrap_or(""),
-                            &workdir,
+                            &wd,
                         ),
                         "edit_file" => run_edit(
                             input["path"].as_str().unwrap_or(""),
                             input["old_text"].as_str().unwrap_or(""),
                             input["new_text"].as_str().unwrap_or(""),
-                            &workdir,
+                            &wd,
                         ),
                         _ => format!("Unknown tool: {tool_name}"),
                     };

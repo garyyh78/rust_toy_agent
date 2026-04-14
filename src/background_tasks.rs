@@ -5,16 +5,16 @@
 //!
 //! Key insight: "Fire and forget -- the agent doesn't block while the command runs."
 
-use crate::text_util::truncate_chars;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-use std::thread;
 use crate::config::BASH_ENV_ALLOWLIST;
+use crate::text_util::truncate_chars;
+use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::thread;
+use tokio::sync::mpsc;
 
 /// Maximum output size for background task results (50KB).
 const MAX_BG_OUTPUT_SIZE: usize = 50_000;
-
 
 fn build_command(command: &str, workdir: &std::path::Path) -> std::process::Command {
     let mut cmd = std::process::Command::new("sh");
@@ -55,15 +55,18 @@ pub struct Notification {
 }
 
 pub struct BackgroundManager {
-    tasks: Arc<Mutex<HashMap<String, BackgroundTask>>>,
-    notification_queue: Arc<Mutex<Vec<Notification>>>,
+    tasks: Arc<DashMap<String, BackgroundTask>>,
+    tx: mpsc::UnboundedSender<Notification>,
+    rx: Arc<std::sync::Mutex<mpsc::UnboundedReceiver<Notification>>>,
 }
 
 impl BackgroundManager {
     pub fn new() -> Self {
+        let (tx, rx) = mpsc::unbounded_channel();
         Self {
-            tasks: Arc::new(Mutex::new(HashMap::new())),
-            notification_queue: Arc::new(Mutex::new(Vec::new())),
+            tasks: Arc::new(DashMap::new()),
+            tx,
+            rx: Arc::new(std::sync::Mutex::new(rx)),
         }
     }
 
@@ -72,18 +75,11 @@ impl BackgroundManager {
         let task_id_for_thread = task_id.clone();
         let command_owned = command.to_string();
         let tasks = Arc::clone(&self.tasks);
-        let notification_queue = Arc::clone(&self.notification_queue);
+        let tx = self.tx.clone();
         let workdir = workdir.to_path_buf();
 
         {
-            let mut tasks_lock = match tasks.lock() {
-                Ok(l) => l,
-                Err(e) => {
-                    tracing::error!(error = %e, "lock poisoned");
-                    return "Error: lock poisoned".to_string();
-                }
-            };
-            tasks_lock.insert(
+            tasks.insert(
                 task_id.clone(),
                 BackgroundTask {
                     task_id: task_id.clone(),
@@ -117,39 +113,22 @@ impl BackgroundManager {
                 output.clone()
             };
 
-            {
-                let mut tasks_lock = match tasks.lock() {
-                    Ok(l) => l,
-                    Err(e) => {
-                        tracing::error!(error = %e, "lock poisoned");
-                        return;
-                    }
-                };
-                if let Some(task) = tasks_lock.get_mut(&task_id_for_thread) {
-                    task.status = status.clone();
-                    task.result = Some(output_truncated.clone());
-                }
+            if let Some(task) = tasks.get_mut(&task_id_for_thread) {
+                task.status = status.clone();
+                task.result = Some(output_truncated.clone());
             }
 
-            {
-                let mut queue = match notification_queue.lock() {
-                    Ok(q) => q,
-                    Err(e) => {
-                        tracing::error!(error = %e, "lock poisoned");
-                        return;
-                    }
-                };
-                queue.push(Notification {
-                    task_id: task_id_for_thread,
-                    status,
-                    command: truncate_chars(&command_owned, MAX_COMMAND_DISPLAY),
-                    result: if output_truncated.len() > MAX_NOTIFICATION_SIZE {
-                        truncate_chars(&output_truncated, MAX_NOTIFICATION_SIZE)
-                    } else {
-                        output_truncated
-                    },
-                });
-            }
+            let notif = Notification {
+                task_id: task_id_for_thread,
+                status,
+                command: truncate_chars(&command_owned, MAX_COMMAND_DISPLAY),
+                result: if output_truncated.len() > MAX_NOTIFICATION_SIZE {
+                    truncate_chars(&output_truncated, MAX_NOTIFICATION_SIZE)
+                } else {
+                    output_truncated
+                },
+            };
+            let _ = tx.send(notif);
         });
 
         format!(

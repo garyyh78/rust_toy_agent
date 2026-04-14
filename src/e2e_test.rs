@@ -2,6 +2,7 @@ use crate::agent_loop::{agent_loop, extract_final_text, Messages};
 use crate::llm_client::AnthropicClient;
 use crate::logger::SessionLogger;
 use crate::todo_manager::TodoManager;
+use crate::tool_runners::WorkdirRoot;
 use crate::tools::TOOLS;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
@@ -102,7 +103,7 @@ pub async fn run_test(
     client: &AnthropicClient,
     model: &str,
     test_case: &TestCase,
-    workdir: &Path,
+    workdir: &WorkdirRoot,
     todo: &Arc<Mutex<TodoManager>>,
     logger: &mut SessionLogger,
 ) -> TestResult {
@@ -114,7 +115,7 @@ pub async fn run_test(
         "You are a coding agent at {}. \
 Use the todo tool to plan multi-step tasks. Mark in_progress before starting, completed when done. \
 Prefer tools over prose.",
-        workdir.display()
+        workdir.as_path().display()
     );
 
     let tools: Json = serde_json::from_str(TOOLS).unwrap();

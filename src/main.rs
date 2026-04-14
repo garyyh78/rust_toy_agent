@@ -13,7 +13,7 @@
 use rust_toy_agent::bin_core::{
     repl::{print_usage, run_repl},
     state::State,
-    test_mode::run_test_mode,
+    test_mode::{run_swe_bench_mode, run_test_mode},
 };
 use rust_toy_agent::llm_client::AnthropicClient;
 use std::env;
@@ -54,6 +54,17 @@ async fn main() {
             return;
         } else {
             tracing::error!("--test requires a test name argument");
+            print_usage();
+            std::process::exit(1);
+        }
+    }
+
+    if let Some(idx) = args.iter().position(|a| a == "--swe-bench") {
+        if let Some(instance_id) = args.get(idx + 1) {
+            run_swe_bench_mode(instance_id).await;
+            return;
+        } else {
+            tracing::error!("--swe-bench requires an instance ID argument");
             print_usage();
             std::process::exit(1);
         }

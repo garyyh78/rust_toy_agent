@@ -25,9 +25,8 @@
 //! └──────────────────────────────────────────────────────────────┘
 
 use crate::todo_manager::TodoManager;
-use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
+use crate::tool_runners::{run_bash, run_edit, run_read, run_write, WorkdirRoot};
 use serde_json::Value as Json;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 // -- Tool JSON schema builders --
@@ -594,12 +593,15 @@ pub const TOOLS: &str = r#"[{
 pub fn dispatch_tools(
     tool_name: &str,
     input: &Json,
-    workdir: &Path,
+    workdir: &WorkdirRoot,
     todo: &Arc<Mutex<TodoManager>>,
 ) -> (Option<String>, bool) {
     match tool_name {
         "bash" => (
-            Some(run_bash(input["command"].as_str().unwrap_or(""), workdir)),
+            Some(run_bash(
+                input["command"].as_str().unwrap_or(""),
+                workdir.as_path(),
+            )),
             false,
         ),
         "read_file" => (
@@ -648,6 +650,7 @@ pub fn dispatch_tools(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tool_runners::WorkdirRoot;
     use std::path::PathBuf;
 
     // -- Tool builder validation --
@@ -836,7 +839,8 @@ mod tests {
         let input = serde_json::json!({
             "items": [{"id": "1", "text": "Test task", "status": "pending"}]
         });
-        let (output, did_todo) = dispatch_tools("todo", &input, &PathBuf::from("."), &todo);
+        let wd = WorkdirRoot::new(&PathBuf::from(".")).unwrap();
+        let (output, did_todo) = dispatch_tools("todo", &input, &wd, &todo);
         assert!(did_todo);
         assert!(output.unwrap().contains("[ ] #1: Test task"));
     }
@@ -845,7 +849,8 @@ mod tests {
     fn test_dispatch_bash_not_todo() {
         let todo = Arc::new(Mutex::new(TodoManager::new()));
         let input = serde_json::json!({"command": "echo hello"});
-        let (output, did_todo) = dispatch_tools("bash", &input, &PathBuf::from("."), &todo);
+        let wd = WorkdirRoot::new(&PathBuf::from(".")).unwrap();
+        let (output, did_todo) = dispatch_tools("bash", &input, &wd, &todo);
         assert!(!did_todo);
         assert!(output.unwrap().contains("hello"));
     }
@@ -854,7 +859,8 @@ mod tests {
     fn test_dispatch_unknown_tool() {
         let todo = Arc::new(Mutex::new(TodoManager::new()));
         let input = serde_json::json!({"foo": "bar"});
-        let (output, did_todo) = dispatch_tools("unknown_tool", &input, &PathBuf::from("."), &todo);
+        let wd = WorkdirRoot::new(&PathBuf::from(".")).unwrap();
+        let (output, did_todo) = dispatch_tools("unknown_tool", &input, &wd, &todo);
         assert!(!did_todo);
         assert!(output.is_none());
     }
@@ -877,7 +883,8 @@ mod tests {
         let input = serde_json::json!({
             "items": [{"id": "1", "text": "", "status": "pending"}]
         });
-        let (output, did_todo) = dispatch_tools("todo", &input, &PathBuf::from("."), &todo);
+        let wd = WorkdirRoot::new(&PathBuf::from(".")).unwrap();
+        let (output, did_todo) = dispatch_tools("todo", &input, &wd, &todo);
         assert!(did_todo, "Even errors from todo should set did_todo=true");
         assert!(output.unwrap().contains("Error:"));
     }

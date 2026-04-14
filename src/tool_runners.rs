@@ -31,14 +31,12 @@
 //! │      replacen(old, new, 1)                                │
 //! └──────────────────────────────────────────────────────────┘
 
+use crate::config::BASH_ENV_ALLOWLIST;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command as Proc;
-use crate::config::BASH_ENV_ALLOWLIST;
 
 /// Maximum output size for tool results (50KB).
 const MAX_OUTPUT_SIZE: usize = 50_000;
-
-
 
 // -- WorkdirRoot --
 // Owns both the original and canonicalized workdir paths, computed once at construction.
@@ -76,7 +74,6 @@ impl WorkdirRoot {
         &self.canonical
     }
 }
-
 
 // -- Path helpers --
 // Normalize resolves "." and ".." without touching the filesystem.
@@ -279,14 +276,16 @@ mod tests {
     #[test]
     fn test_safe_path_allowed() {
         let workdir = std::env::current_dir().unwrap();
-        let result = safe_path("src/main.rs", &workdir);
+        let wr = WorkdirRoot::new(&workdir).unwrap();
+        let result = safe_path("src/main.rs", &wr);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_safe_path_escape_rejected() {
         let workdir = std::env::current_dir().unwrap();
-        let result = safe_path("../../etc/passwd", &workdir);
+        let wr = WorkdirRoot::new(&workdir).unwrap();
+        let result = safe_path("../../etc/passwd", &wr);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("escapes sandbox"));
     }
@@ -299,7 +298,8 @@ mod tests {
         std::fs::write(outside.path().join("secret"), "x").unwrap();
         let link = tmp.path().join("escape");
         std::os::unix::fs::symlink(outside.path(), &link).unwrap();
-        let bad = safe_path("escape/secret", tmp.path());
+        let wr = WorkdirRoot::new(tmp.path()).unwrap();
+        let bad = safe_path("escape/secret", &wr);
         assert!(bad.is_err(), "symlink escape was accepted: {:?}", bad);
     }
 
@@ -355,12 +355,13 @@ mod tests {
     fn test_run_write_and_read() {
         let tmp = tempfile::TempDir::new().unwrap();
         let workdir = tmp.path().to_path_buf();
+        let workdir_root = WorkdirRoot::new(&workdir).unwrap();
         let filename = "test_write_read.txt";
 
-        let result = run_write(filename, "line1\nline2\nline3", &workdir);
+        let result = run_write(filename, "line1\nline2\nline3", &workdir_root);
         assert!(result.contains("Wrote"));
 
-        let content = run_read(filename, None, &workdir);
+        let content = run_read(filename, None, &workdir_root);
         assert!(content.contains("line2"));
     }
 
@@ -368,10 +369,11 @@ mod tests {
     fn test_run_read_with_limit() {
         let tmp = tempfile::TempDir::new().unwrap();
         let workdir = tmp.path().to_path_buf();
+        let workdir_root = WorkdirRoot::new(&workdir).unwrap();
         let filename = "test_limit.txt";
 
-        run_write(filename, "a\nb\nc\nd\ne", &workdir);
-        let content = run_read(filename, Some(2), &workdir);
+        run_write(filename, "a\nb\nc\nd\ne", &workdir_root);
+        let content = run_read(filename, Some(2), &workdir_root);
         assert!(content.contains("a"));
         assert!(content.contains("b"));
         assert!(content.contains("more lines"));
@@ -381,13 +383,14 @@ mod tests {
     fn test_run_edit() {
         let tmp = tempfile::TempDir::new().unwrap();
         let workdir = tmp.path().to_path_buf();
+        let workdir_root = WorkdirRoot::new(&workdir).unwrap();
         let filename = "test_edit.txt";
 
-        run_write(filename, "hello world", &workdir);
-        let result = run_edit(filename, "world", "rust", &workdir);
+        run_write(filename, "hello world", &workdir_root);
+        let result = run_edit(filename, "world", "rust", &workdir_root);
         assert!(result.contains("Edited"));
 
-        let content = run_read(filename, None, &workdir);
+        let content = run_read(filename, None, &workdir_root);
         assert!(content.contains("hello rust"));
     }
 
@@ -395,10 +398,11 @@ mod tests {
     fn test_run_edit_text_not_found() {
         let tmp = tempfile::TempDir::new().unwrap();
         let workdir = tmp.path().to_path_buf();
+        let workdir_root = WorkdirRoot::new(&workdir).unwrap();
         let filename = "test_edit_nf.txt";
 
-        run_write(filename, "hello world", &workdir);
-        let result = run_edit(filename, "missing", "replaced", &workdir);
+        run_write(filename, "hello world", &workdir_root);
+        let result = run_edit(filename, "missing", "replaced", &workdir_root);
         assert!(result.contains("Text not found"));
     }
 }

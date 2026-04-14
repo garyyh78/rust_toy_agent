@@ -1,5 +1,5 @@
 use crate::llm_client::AnthropicClient;
-use crate::tool_runners::{run_bash, run_edit, run_read, run_write};
+use crate::tool_runners::{run_bash, run_edit, run_read, run_write, WorkdirRoot};
 use crate::tools::skill_agent_tools;
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -202,23 +202,27 @@ impl SkillAgent {
     /// Dispatch a tool call
     fn dispatch_tool(&self, tool_name: &str, input: &Json) -> String {
         let workdir = Path::new(&self.workdir);
+        let wd = match WorkdirRoot::new(workdir) {
+            Ok(w) => w,
+            Err(e) => return format!("Error: workdir: {}", e),
+        };
         match tool_name {
             "bash" => run_bash(input["command"].as_str().unwrap_or(""), workdir),
             "read_file" => run_read(
                 input["path"].as_str().unwrap_or(""),
                 input["limit"].as_u64().map(|n| n as usize),
-                workdir,
+                &wd,
             ),
             "write_file" => run_write(
                 input["path"].as_str().unwrap_or(""),
                 input["content"].as_str().unwrap_or(""),
-                workdir,
+                &wd,
             ),
             "edit_file" => run_edit(
                 input["path"].as_str().unwrap_or(""),
                 input["old_text"].as_str().unwrap_or(""),
                 input["new_text"].as_str().unwrap_or(""),
-                workdir,
+                &wd,
             ),
             "load_skill" => {
                 let name = input["name"].as_str().unwrap_or("");
