@@ -1,5 +1,5 @@
 use crate::llm_client::AnthropicClient;
-use crate::tool_runners::{run_bash, run_edit, run_read, run_write, WorkdirRoot};
+use crate::tool_runners::{dispatch_basic_file_tool, WorkdirRoot};
 use crate::tools::skill_agent_tools;
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -206,24 +206,10 @@ impl SkillAgent {
             Ok(w) => w,
             Err(e) => return format!("Error: workdir: {}", e),
         };
+        if let Some(result) = dispatch_basic_file_tool(tool_name, input, &wd) {
+            return result;
+        }
         match tool_name {
-            "bash" => run_bash(input["command"].as_str().unwrap_or(""), workdir),
-            "read_file" => run_read(
-                input["path"].as_str().unwrap_or(""),
-                input["limit"].as_u64().map(|n| n as usize),
-                &wd,
-            ),
-            "write_file" => run_write(
-                input["path"].as_str().unwrap_or(""),
-                input["content"].as_str().unwrap_or(""),
-                &wd,
-            ),
-            "edit_file" => run_edit(
-                input["path"].as_str().unwrap_or(""),
-                input["old_text"].as_str().unwrap_or(""),
-                input["new_text"].as_str().unwrap_or(""),
-                &wd,
-            ),
             "load_skill" => {
                 let name = input["name"].as_str().unwrap_or("");
                 self.skill_loader.get_content(name)

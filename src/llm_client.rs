@@ -29,6 +29,7 @@
 //! Used by: agent_loop.rs (create_message)
 //! Tested by: 7 unit tests (build_request_body variants)
 
+use rand::{Rng, SeedableRng};
 use serde_json::Value as Json;
 use std::env;
 use std::time::Duration;
@@ -60,15 +61,25 @@ enum SendError {
     Fatal(String),
 }
 
-/// Simple deterministic-ish jitter: a fraction of the base delay derived from
-/// the system clock's nanoseconds. Avoids pulling in the `rand` crate.
+thread_local! {
+    static RNG: std::cell::RefCell<rand::rngs::StdRng> = std::cell::RefCell::new(
+        rand::rngs::StdRng::from_seed([
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .subsec_nanos() as u8,
+            17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+        ])
+    );
+}
+
 fn jitter(base: Duration) -> Duration {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos())
-        .unwrap_or(0);
-    let fraction = (nanos % 250) as u64;
-    Duration::from_millis((base.as_millis() as u64 * fraction) / 1000)
+    let fraction = RNG.with(|rng| {
+        let mut rng = rng.borrow_mut();
+        rng.gen_range(0..base.as_millis() as u64 / 4)
+    });
+    Duration::from_millis(fraction)
 }
 
 /// Holds API credentials and a shared HTTP client for reuse across requests.

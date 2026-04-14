@@ -1,14 +1,12 @@
-use crate::config::SUBAGENT_MAX_TOKENS;
+use crate::config::{MAX_TOOL_OUTPUT_BYTES, SUBAGENT_MAX_TOKENS};
 use crate::llm_client::AnthropicClient;
-use crate::tool_runners::{run_bash, run_edit, run_read, run_write, WorkdirRoot};
+use crate::tool_runners::{dispatch_basic_file_tool, WorkdirRoot};
 use crate::tools::{child_agent_tools, parent_agent_tools};
 use serde_json::Value as Json;
 use std::path::Path;
 
 /// Maximum iterations for a subagent loop (safety limit).
 const MAX_SUBAGENT_TURNS: u32 = 30;
-/// Truncate tool output to this many characters before returning to the LLM.
-const MAX_TOOL_OUTPUT: usize = 50_000;
 
 /// Subagent system that spawns child agents with fresh context.
 /// The child works in its own context, sharing the filesystem,
@@ -56,26 +54,8 @@ impl Subagent {
             Ok(w) => w,
             Err(e) => return format!("Error: workdir: {}", e),
         };
-        match tool_name {
-            "bash" => run_bash(input["command"].as_str().unwrap_or(""), workdir),
-            "read_file" => run_read(
-                input["path"].as_str().unwrap_or(""),
-                input["limit"].as_u64().map(|n| n as usize),
-                &wd,
-            ),
-            "write_file" => run_write(
-                input["path"].as_str().unwrap_or(""),
-                input["content"].as_str().unwrap_or(""),
-                &wd,
-            ),
-            "edit_file" => run_edit(
-                input["path"].as_str().unwrap_or(""),
-                input["old_text"].as_str().unwrap_or(""),
-                input["new_text"].as_str().unwrap_or(""),
-                &wd,
-            ),
-            _ => format!("Unknown tool: {tool_name}"),
-        }
+        dispatch_basic_file_tool(tool_name, input, &wd)
+            .unwrap_or_else(|| format!("Unknown tool: {tool_name}"))
     }
 
     /// Execute all tool_use blocks in a response and return the results.
@@ -88,10 +68,11 @@ impl Subagent {
                 }
                 let tool_name = block["name"].as_str().unwrap_or("");
                 let output = self.dispatch_child_tool(tool_name, &block["input"]);
+                let output = crate::text_util::truncate_chars(&output, MAX_TOOL_OUTPUT_BYTES);
                 results.push(serde_json::json!({
                     "type": "tool_result",
                     "tool_use_id": block["id"],
-                    "content": output.chars().take(MAX_TOOL_OUTPUT).collect::<String>()
+                    "content": output
                 }));
             }
         }

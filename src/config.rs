@@ -48,6 +48,9 @@ pub const IDLE_TIMEOUT_SECS: u64 = 60;
 /// Bash command timeout (seconds).
 pub const BASH_TIMEOUT_SECS: u64 = 60;
 
+/// Maximum output size for tool results (50KB).
+pub const MAX_TOOL_OUTPUT_BYTES: usize = 50_000;
+
 /// Allowlist of environment variables passed to bash commands.
 pub const BASH_ENV_ALLOWLIST: &[&str] = &[
     "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TERM", "TMPDIR", "SHELL", "PWD",

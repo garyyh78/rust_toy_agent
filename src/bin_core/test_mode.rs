@@ -189,13 +189,7 @@ fn setup_swe_instance(workdir: &PathBuf, instance_id: &str) {
 
     eprintln!("  Cloning repository...");
     let clone_output = Command::new("git")
-        .args([
-            "clone",
-            "--depth",
-            "1",
-            SWE_BENCH_REPO_URL,
-            repo_dir.to_str().unwrap(),
-        ])
+        .args(["clone", SWE_BENCH_REPO_URL, repo_dir.to_str().unwrap()])
         .output();
 
     match clone_output {

@@ -113,7 +113,7 @@ impl BackgroundManager {
                 output.clone()
             };
 
-            if let Some(task) = tasks.get_mut(&task_id_for_thread) {
+            if let Some(mut task) = tasks.get_mut(&task_id_for_thread) {
                 task.status = status.clone();
                 task.result = Some(output_truncated.clone());
             }
@@ -139,13 +139,8 @@ impl BackgroundManager {
     }
 
     pub fn check(&self, task_id: Option<&str>) -> String {
-        let tasks = match self.tasks.lock() {
-            Ok(t) => t,
-            Err(e) => return format!("Error: lock poisoned: {}", e),
-        };
-
         if let Some(tid) = task_id {
-            if let Some(task) = tasks.get(tid) {
+            if let Some(task) = self.tasks.get(tid) {
                 let result = task.result.as_deref().unwrap_or("(running)");
                 return format!(
                     "[{}] {}\n{}",
@@ -158,16 +153,17 @@ impl BackgroundManager {
             }
         }
 
-        if tasks.is_empty() {
+        if self.tasks.is_empty() {
             return "No background tasks.".to_string();
         }
 
-        let lines: Vec<String> = tasks
-            .values()
+        let lines: Vec<String> = self
+            .tasks
+            .iter()
             .map(|t| {
                 format!(
                     "{}: [{}] {}",
-                    t.task_id,
+                    t.key(),
                     t.status,
                     truncate_chars(&t.command, MAX_STATUS_COMMAND_DISPLAY)
                 )
@@ -178,14 +174,17 @@ impl BackgroundManager {
     }
 
     pub fn drain_notifications(&self) -> Vec<Notification> {
-        let mut queue = match self.notification_queue.lock() {
+        let mut queue = match self.rx.lock() {
             Ok(q) => q,
             Err(e) => {
                 tracing::error!(error = %e, "lock poisoned");
                 return vec![];
             }
         };
-        let notifs: Vec<Notification> = queue.drain(..).collect();
+        let mut notifs = Vec::new();
+        while let Ok(notif) = queue.try_recv() {
+            notifs.push(notif);
+        }
         notifs
     }
 }

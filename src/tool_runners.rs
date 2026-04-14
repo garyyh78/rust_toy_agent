@@ -31,12 +31,9 @@
 //! │      replacen(old, new, 1)                                │
 //! └──────────────────────────────────────────────────────────┘
 
-use crate::config::BASH_ENV_ALLOWLIST;
+use crate::config::{BASH_ENV_ALLOWLIST, MAX_TOOL_OUTPUT_BYTES};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command as Proc;
-
-/// Maximum output size for tool results (50KB).
-const MAX_OUTPUT_SIZE: usize = 50_000;
 
 // -- WorkdirRoot --
 // Owns both the original and canonicalized workdir paths, computed once at construction.
@@ -139,6 +136,36 @@ pub fn safe_path(p: &str, workdir_root: &WorkdirRoot) -> Result<PathBuf, String>
 // Each runner takes a workdir, calls safe_path when needed, and returns
 // a string result. Errors are returned as strings, never panicking.
 
+pub fn dispatch_basic_file_tool(
+    name: &str,
+    input: &serde_json::Value,
+    workdir: &WorkdirRoot,
+) -> Option<String> {
+    match name {
+        "bash" => Some(run_bash(
+            input["command"].as_str().unwrap_or(""),
+            workdir.as_path(),
+        )),
+        "read_file" => Some(run_read(
+            input["path"].as_str().unwrap_or(""),
+            input["limit"].as_u64().map(|n| n as usize),
+            workdir,
+        )),
+        "write_file" => Some(run_write(
+            input["path"].as_str().unwrap_or(""),
+            input["content"].as_str().unwrap_or(""),
+            workdir,
+        )),
+        "edit_file" => Some(run_edit(
+            input["path"].as_str().unwrap_or(""),
+            input["old_text"].as_str().unwrap_or(""),
+            input["new_text"].as_str().unwrap_or(""),
+            workdir,
+        )),
+        _ => None,
+    }
+}
+
 /// Run a shell command via `sh -c`. The substring blocklist below is a
 /// best-effort guard against obvious footguns (`rm -rf /`, `sudo`, ...), NOT
 /// a security boundary — it is trivially bypassed by piping, env tricks, or
@@ -170,8 +197,8 @@ pub fn run_bash(command: &str, workdir: &Path) -> String {
             let text = text.trim().to_string();
             if text.is_empty() {
                 "(no output)".to_string()
-            } else if text.len() > MAX_OUTPUT_SIZE {
-                text[..MAX_OUTPUT_SIZE].to_string()
+            } else if text.len() > MAX_TOOL_OUTPUT_BYTES {
+                text[..MAX_TOOL_OUTPUT_BYTES].to_string()
             } else {
                 text
             }
@@ -195,8 +222,8 @@ pub fn run_read(path: &str, limit: Option<usize>, workdir_root: &WorkdirRoot) ->
                     }
                     _ => lines.join("\n"),
                 };
-                if result.len() > MAX_OUTPUT_SIZE {
-                    result[..MAX_OUTPUT_SIZE].to_string()
+                if result.len() > MAX_TOOL_OUTPUT_BYTES {
+                    result[..MAX_TOOL_OUTPUT_BYTES].to_string()
                 } else {
                     result
                 }
