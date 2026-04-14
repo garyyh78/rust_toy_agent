@@ -5,7 +5,7 @@
 
 set -e
 
-INSTANCE_ID="${1:-django__django-12113}"
+INSTANCE_ID="${1:-marshmallow-code__marshmallow-1359}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
