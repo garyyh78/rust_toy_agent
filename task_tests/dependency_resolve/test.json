@@ -1,0 +1,6 @@
+{
+  "name": "dependency_resolve",
+  "prompt": "Write a Python script to perform topological sort on a dependency graph. The graph has tasks A, B, C, D, E with edges: A->B, A->C, B->D, C->D, D->E. Compute a valid topological ordering and print the tasks space-separated on one line.",
+  "expected_output": "A B C D E",
+  "language": "python"
+}

@@ -1,0 +1,6 @@
+{
+  "name": "multiline_transform",
+  "prompt": "In the workspace directory, there is a file input.txt with one word per line: hello, world, this is a test line, foo, bar, another test. Write a Python script that: 1) reads input.txt, 2) filters to lines with >3 characters, 3) sorts by length descending, 4) prints only the words (not lengths) space-separated on one line.",
+  "expected_output": "this is a test line another test hello world",
+  "language": "python"
+}

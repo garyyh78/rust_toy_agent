@@ -1,0 +1,6 @@
+{
+  "name": "regex_extractor",
+  "prompt": "In the workspace directory, there is a text file called mixed_text.txt containing various data including email addresses. Write a Python script that uses regex to extract all email addresses, sorts them alphabetically, and prints them comma-separated on one line.",
+  "expected_output": "alice@example.com,bob@test.org,charlie@domain.net",
+  "language": "python"
+}

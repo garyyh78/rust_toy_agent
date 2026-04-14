@@ -1,0 +1,6 @@
+{
+  "name": "graph_bfs",
+  "prompt": "Write a Rust program implementing breadth-first search (BFS) on a graph. The graph is defined as adjacency list: edges from node 0 to [1, 2], node 1 to [2, 3], node 2 to [], node 3 to [4], node 4 to []. Start BFS from node 0 and print nodes in the order they are visited (space-separated).",
+  "expected_output": "0 1 2 3 4",
+  "language": "rust"
+}
