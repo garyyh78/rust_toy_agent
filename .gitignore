@@ -37,6 +37,9 @@ random_sort
 # Proptest regression seeds
 proptest-regressions/
 
+# Cargo config (local only)
+.cargo/
+
 # Worktrees (unused)
 .worktrees/
 
