@@ -28,8 +28,7 @@ pub async fn dispatch_tool(state: &State, name: &str, input: &Json) -> String {
         "TodoWrite" => {
             let items = input["items"]
                 .as_array()
-                .map(|a| a.as_slice())
-                .unwrap_or(&[]);
+                .map_or_else(|| &[] as &[serde_json::Value], |a| a.as_slice());
             let mut mgr = match state.todo.lock() {
                 Ok(m) => m,
                 Err(e) => return format!("Error: lock poisoned: {e}"),

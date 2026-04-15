@@ -1,4 +1,4 @@
-//! text_util.rs - Unicode-safe string truncation utilities
+//! `text_util.rs` - Unicode-safe string truncation utilities
 //!
 //! All user-facing string truncation should go through `truncate_chars` to
 //! avoid panicking on multi-byte (non-ASCII) text.

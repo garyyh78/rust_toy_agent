@@ -1,33 +1,33 @@
-//! llm_client.rs - Anthropic API client
+//! `llm_client.rs` - Anthropic API client
 //!
 //! Wraps reqwest to talk to the Anthropic Messages API.
 //!
 //! Relationship diagram:
 //!
 //!   ┌───────────────────────────────────────────────────┐
-//!   │              AnthropicClient                      │
+//!   │              `AnthropicClient`                      │
 //!   ├───────────────────────────────────────────────────┤
-//!   │  from_env()  ── reads ANTHROPIC_API_KEY           │
-//!   │                reads ANTHROPIC_BASE_URL            │
+//!   │  `from_env()`  ── reads `ANTHROPIC_API_KEY`           │
+//!   │                reads `ANTHROPIC_BASE_URL`            │
 //!   │                                                   │
-//!   │  new()       ── explicit credentials              │
+//!   │  `new()`       ── explicit credentials              │
 //!   │                                                   │
-//!   │  build_request_body() ── pure JSON builder        │
+//!   │  `build_request_body()` ── pure JSON builder        │
 //!   │      ┌──────────────────────────────────┐         │
 //!   │      │ { model, system?, messages,      │         │
-//!   │      │   tools?, max_tokens }           │         │
+//!   │      │   tools?, `max_tokens` }           │         │
 //!   │      └──────────────────────────────────┘         │
 //!   │                                                   │
-//!   │  create_message() ── async HTTP POST              │
+//!   │  `create_message()` ── async HTTP POST              │
 //!   │      │                                            │
-//!   │      ├─ build_request_body()                      │
+//!   │      ├─ `build_request_body()`                      │
 //!   │      ├─ POST /v1/messages                         │
 //!   │      ├─ check status code                         │
 //!   │      └─ parse JSON response                       │
 //!   └───────────────────────────────────────────────────┘
 //!
-//! Used by: agent_loop.rs (create_message)
-//! Tested by: 7 unit tests (build_request_body variants)
+//! Used by: `agent_loop.rs` (`create_message`)
+//! Tested by: 7 unit tests (`build_request_body` variants)
 
 use rand::{Rng, SeedableRng};
 use serde_json::Value as Json;
@@ -91,7 +91,7 @@ pub struct AnthropicClient {
 }
 
 impl AnthropicClient {
-    /// Build a client from environment variables (ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL).
+    /// Build a client from environment variables (`ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`).
     /// Falls back to the official Anthropic endpoint if no base URL is set.
     pub fn from_env() -> Self {
         let base_url = env::var("ANTHROPIC_BASE_URL")

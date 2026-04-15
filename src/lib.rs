@@ -3,6 +3,7 @@ pub mod agent_teams;
 pub mod background_tasks;
 pub mod bin_core;
 pub use bin_core::constants::LEAD;
+pub use llm_client::AnthropicClient;
 pub mod config;
 pub mod context_compact;
 pub mod e2e_test;

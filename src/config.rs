@@ -17,7 +17,7 @@ pub const COMPACTOR_MAX_TOKENS: u32 = 8_000;
 /// Summarization uses less tokens since it's just a summary.
 pub const SUMMARIZE_MAX_TOKENS: u32 = 2_000;
 
-/// Max rounds of a single agent_loop before forced stop.
+/// Max rounds of a single `agent_loop` before forced stop.
 pub const MAX_ROUNDS: u32 = 50;
 
 /// Token threshold for triggering auto-compaction.

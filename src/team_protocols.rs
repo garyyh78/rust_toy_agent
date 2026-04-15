@@ -1,7 +1,7 @@
-//! team_protocols.rs - Team Protocols for shutdown and plan approval
+//! `team_protocols.rs` - Team Protocols for shutdown and plan approval
 //!
 //! Shutdown protocol and plan approval protocol, both using the same
-//! request_id correlation pattern. Uses DashMap for lock-free concurrent
+//! `request_id` correlation pattern. Uses `DashMap` for lock-free concurrent
 //! request tracking.
 //!
 //! ```text
@@ -28,7 +28,7 @@
 //!                                       approve: true}
 //! ```
 //!
-//! Key insight: "Same request_id correlation pattern, two domains."
+//! Key insight: "Same `request_id` correlation pattern, two domains."
 
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
@@ -44,7 +44,7 @@ pub enum RequestStatus {
     Rejected,
 }
 
-/// A shutdown request tracked by request_id.
+/// A shutdown request tracked by `request_id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShutdownRequest {
     pub request_id: String,
@@ -52,7 +52,7 @@ pub struct ShutdownRequest {
     pub status: RequestStatus,
 }
 
-/// A plan approval request tracked by request_id.
+/// A plan approval request tracked by `request_id`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanRequest {
     pub request_id: String,
@@ -61,7 +61,7 @@ pub struct PlanRequest {
     pub status: RequestStatus,
 }
 
-/// Thread-safe request trackers using DashMap.
+/// Thread-safe request trackers using `DashMap`.
 #[derive(Clone)]
 pub struct ProtocolTracker {
     pub shutdown_requests: Arc<DashMap<String, ShutdownRequest>>,
@@ -78,7 +78,7 @@ impl ProtocolTracker {
 
     // -- Shutdown protocol --
 
-    /// Create a shutdown request and return the request_id.
+    /// Create a shutdown request and return the `request_id`.
     pub fn create_shutdown_request(&self, target: &str) -> String {
         // Generate a short UUID as correlation key between request and response
         let request_id = Uuid::new_v4().to_string()[..8].to_string();
@@ -120,7 +120,7 @@ impl ProtocolTracker {
 
     // -- Plan approval protocol --
 
-    /// Submit a plan for approval. Returns the request_id.
+    /// Submit a plan for approval. Returns the `request_id`.
     pub fn submit_plan(&self, from: &str, plan: &str) -> String {
         let request_id = Uuid::new_v4().to_string()[..8].to_string();
         self.plan_requests.insert(

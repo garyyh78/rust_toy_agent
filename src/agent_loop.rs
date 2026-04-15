@@ -1,4 +1,4 @@
-//! agent_loop.rs - Core agent loop with nag reminder
+//! `agent_loop.rs` - Core agent loop with nag reminder
 //!
 //! Calls the LLM, dispatches tool calls, and tracks todo usage.
 //! If the LLM skips todo updates for 3+ rounds, a nag reminder is injected.
@@ -6,29 +6,29 @@
 //! Module relationship:
 //!
 //!   ┌──────────────┐        ┌──────────────┐
-//!   │ llm_client.rs│◄───────│ agent_loop   │
+//!   │ `llm_client.rs`│◄───────│ `agent_loop`   │
 //!   └──────────────┘        └──┬───┬───┬───┘
-//!        create_message()     │   │   │
+//!        `create_message()`     │   │   │
 //!                             │   │   │
 //!   ┌─────────────┐           │   │   │
 //!   │  tools.rs   │◄──────────┘   │   │
 //!   └─────────────┘  dispatch      │   │
-//!       dispatch_tools()           │   │
+//!       `dispatch_tools()`           │   │
 //!                                  │   │
 //!   ┌─────────────┐               │   │
 //!   │  logger.rs  │◄──────────────┘   │
 //!   └─────────────┘  log_*()          │
 //!                                     │
 //!   ┌──────────────┐                  │
-//!   │tool_runners.rs│◄────────────────┘
+//!   │`tool_runners.rs`│◄────────────────┘
 //!   └──────────────┘  (called by tools)
 //!
-//! agent_loop() flow:
+//! `agent_loop()` flow:
 //!
 //!   loop {
 //!     1. validate pairing → 2. truncate history → 3. call LLM
 //!     4. parse response  → 5. dispatch tools   → 6. track todo nag
-//!     7. append results  → (repeat until stop_reason != "tool_use")
+//!     7. append results  → (repeat until `stop_reason` != "`tool_use`")
 //!   }
 
 use crate::config::LEAD_MAX_TOKENS;
@@ -70,7 +70,7 @@ pub fn extract_final_text(messages: &[Json]) -> String {
     text
 }
 
-/// Validate that every tool_use block has a matching tool_result immediately after.
+/// Validate that every `tool_use` block has a matching `tool_result` immediately after.
 /// Returns an error description if pairing is broken.
 fn validate_tool_pairing(messages: &[Json]) -> Option<String> {
     if messages.len() < 2 {
@@ -83,15 +83,12 @@ fn validate_tool_pairing(messages: &[Json]) -> Option<String> {
                     if block["type"] == "tool_use" {
                         let tool_id = block["id"].as_str().unwrap_or("unknown");
                         let next = messages.get(i + 1).unwrap();
-                        let has_result = next["content"]
-                            .as_array()
-                            .map(|arr| {
-                                arr.iter().any(|b| {
-                                    b["type"] == "tool_result"
-                                        && b["tool_use_id"].as_str() == Some(tool_id)
-                                })
+                        let has_result = next["content"].as_array().is_some_and(|arr| {
+                            arr.iter().any(|b| {
+                                b["type"] == "tool_result"
+                                    && b["tool_use_id"].as_str() == Some(tool_id)
                             })
-                            .unwrap_or(false);
+                        });
                         if !has_result {
                             return Some(format!(
                                 "tool_use {tool_id} at index {i} has no matching tool_result at index {}",
@@ -117,8 +114,7 @@ fn truncate_messages(messages: &mut Messages, max_rounds: usize) {
         let prev_is_assistant_tool_use = messages[cut - 1]["role"] == "assistant"
             && messages[cut - 1]["content"]
                 .as_array()
-                .map(|arr| arr.iter().any(|b| b["type"] == "tool_use"))
-                .unwrap_or(false);
+                .is_some_and(|arr| arr.iter().any(|b| b["type"] == "tool_use"));
         if prev_is_assistant_tool_use {
             cut += 1;
             continue;
@@ -133,7 +129,7 @@ fn log_round_start(logger: &mut SessionLogger, round: usize, msg_count: usize, m
     logger.log_section(&format!("Agent Loop Round {round}"));
     logger.log_info("history", &format!("{msg_count} messages"));
     logger.log_info("model", model);
-    eprintln!();
+    tracing::debug!("Starting round {round} with {msg_count} messages");
 }
 
 /// Build request, send to LLM, log the response. Returns None on error.
@@ -175,13 +171,13 @@ async fn call_llm(
 /// Log structured error details extracted from API JSON error body.
 fn log_api_error(logger: &mut SessionLogger, error_str: &str) {
     logger.log_section("Agent Error");
-    eprintln!("\x1b[31m  {error_str}\x1b[0m");
+    tracing::error!(error = %error_str, "API error response");
     if let Some(pos) = error_str.find('{') {
         if let Ok(parsed) = serde_json::from_str::<Json>(&error_str[pos..]) {
             let err = &parsed["error"];
             if let Some(msg) = err["message"].as_str() {
                 logger.log_info("message", msg);
-                eprintln!("\x1b[31m  message: {msg}\x1b[0m");
+                tracing::error!(message = %msg, "error details");
             }
             if let Some(err_type) = err["type"].as_str() {
                 logger.log_info("type", err_type);
@@ -197,7 +193,7 @@ fn log_api_error(logger: &mut SessionLogger, error_str: &str) {
     logger.log_info("status", "API call failed, stopping loop");
 }
 
-/// Dispatch all tool_use blocks from the assistant's response.
+/// Dispatch all `tool_use` blocks from the assistant's response.
 /// Returns the result blocks and whether the todo tool was used.
 fn dispatch_tool_calls(
     content: &Json,
@@ -228,7 +224,7 @@ fn dispatch_tool_calls(
 
                 logger.log_info("output", &format!("{} bytes", output.len()));
                 logger.log_output_preview(&output);
-                eprintln!();
+                tracing::debug!(tool = %tool_name, "tool call completed");
 
                 results.push(json!({
                     "type": "tool_result",
@@ -242,7 +238,7 @@ fn dispatch_tool_calls(
     (results, used_todo)
 }
 
-/// If rounds_since_todo >= 3, inject a nag reminder into the last tool_result.
+/// If `rounds_since_todo` >= 3, inject a nag reminder into the last `tool_result`.
 fn maybe_inject_nag(results: &mut [Json], rounds_since_todo: usize, logger: &mut SessionLogger) {
     if rounds_since_todo >= 3 && !results.is_empty() {
         logger.log_step("⚠", "Injecting nag reminder into tool_result");
@@ -278,7 +274,7 @@ pub async fn agent_loop(
         // Step 1: validate history before sending to API
         if let Some(err) = validate_tool_pairing(messages) {
             logger.log_section("History Validation Error");
-            eprintln!("\x1b[31m  {err}\x1b[0m");
+            tracing::error!(error = %err, "history validation failed");
             logger.log_info("status", "Corrupted history, stopping loop");
             return (0, 0, 0);
         }
@@ -307,7 +303,6 @@ pub async fn agent_loop(
         );
         logger.log_info("stop", &stop_reason);
         tracing::info!(stop_reason = %stop_reason, "LLM round complete");
-        eprintln!();
 
         // Append assistant response to history
         messages.push(json!({"role": "assistant", "content": content}));
@@ -320,12 +315,11 @@ pub async fn agent_loop(
         }
 
         // Step 6: dispatch tool calls
-        let tool_count = content
-            .as_array()
-            .map(|blocks| blocks.iter().filter(|b| b["type"] == "tool_use").count())
-            .unwrap_or(0);
+        let tool_count = content.as_array().map_or(0, |blocks| {
+            blocks.iter().filter(|b| b["type"] == "tool_use").count()
+        });
         logger.log_info("tools", &format!("{tool_count} tool call(s) requested"));
-        eprintln!();
+        tracing::debug!(count = tool_count, "dispatching tool calls");
 
         let (mut results, used_todo) = dispatch_tool_calls(&content, workdir, todo, logger);
 

@@ -1,14 +1,14 @@
 //! main.rs - Binary entry point
 //!
-//! This is a thin wrapper that delegates to the bin_core modules.
-//! All functionality is organized under src/bin_core/:
+//! This is a thin wrapper that delegates to the `bin_core` modules.
+//! All functionality is organized under `src/bin_core/`:
 //!   - constants: Application constants
 //!   - state: Agent state management
 //!   - dispatch: Tool dispatch logic
-//!   - agent_loop: Main agent loop
+//!   - `agent_loop`: Main agent loop
 //!   - teammate: Teammate agent loop
 //!   - repl: Interactive REPL
-//!   - test_mode: End-to-end test harness
+//!   - `test_mode`: End-to-end test harness
 
 use rust_toy_agent::bin_core::{
     repl::{print_usage, run_repl},
@@ -52,22 +52,20 @@ async fn main() {
         if let Some(test_name) = args.get(idx + 1) {
             run_test_mode(test_name).await;
             return;
-        } else {
-            tracing::error!("--test requires a test name argument");
-            print_usage();
-            std::process::exit(1);
         }
+        tracing::error!("--test requires a test name argument");
+        print_usage();
+        std::process::exit(1);
     }
 
     if let Some(idx) = args.iter().position(|a| a == "--swe-bench") {
         if let Some(instance_id) = args.get(idx + 1) {
             run_swe_bench_mode(instance_id).await;
             return;
-        } else {
-            tracing::error!("--swe-bench requires an instance ID argument");
-            print_usage();
-            std::process::exit(1);
         }
+        tracing::error!("--swe-bench requires an instance ID argument");
+        print_usage();
+        std::process::exit(1);
     }
 
     // REPL mode

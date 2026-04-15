@@ -165,6 +165,10 @@ Prefer tools over prose.",
     }
 }
 
+/// Loads a test case from a JSON file.
+///
+/// # Errors
+/// Returns an error if the file cannot be read, parsed, or is missing required fields.
 pub fn load_test_case(path: &Path) -> Result<TestCase, String> {
     let content =
         std::fs::read_to_string(path).map_err(|e| format!("Failed to read test file: {e}"))?;

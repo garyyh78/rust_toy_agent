@@ -14,9 +14,9 @@ const TOOL_RESULT_PREVIEW_LEN: usize = 100;
 const MAX_CONVERSATION_SIZE: usize = 80_000;
 
 /// Three-layer compression pipeline for context management.
-/// Layer 1: micro_compact - replace old tool results with placeholders
-/// Layer 2: auto_compact - save transcript, summarize, replace messages
-/// Layer 3: manual_compact - triggered by compact tool
+/// Layer 1: `micro_compact` - replace old tool results with placeholders
+/// Layer 2: `auto_compact` - save transcript, summarize, replace messages
+/// Layer 3: `manual_compact` - triggered by compact tool
 #[allow(dead_code)]
 pub struct ContextCompactor {
     client: AnthropicClient,
@@ -52,7 +52,7 @@ impl ContextCompactor {
         total_chars / 4
     }
 
-    /// Layer 1: micro_compact - replace old tool results with placeholders
+    /// Layer 1: `micro_compact` - replace old tool results with placeholders
     pub fn micro_compact(&self, messages: &mut [Json]) {
         // Collect tool results with their indices
         let mut tool_results: Vec<(usize, usize, Json)> = Vec::new();
@@ -100,10 +100,8 @@ impl ContextCompactor {
                         if let Some(content_str) = result["content"].as_str() {
                             if content_str.len() > TOOL_RESULT_PREVIEW_LEN {
                                 let tool_id = result["tool_use_id"].as_str().unwrap_or("");
-                                let tool_name = tool_name_map
-                                    .get(tool_id)
-                                    .map(|s| s.as_str())
-                                    .unwrap_or("unknown");
+                                let tool_name =
+                                    tool_name_map.get(tool_id).map_or("unknown", |s| s.as_str());
                                 result["content"] =
                                     Json::String(format!("[Previous: used {tool_name}]"));
                             }
@@ -114,7 +112,7 @@ impl ContextCompactor {
         }
     }
 
-    /// Layer 2: auto_compact - save transcript, summarize, replace messages (async)
+    /// Layer 2: `auto_compact` - save transcript, summarize, replace messages (async)
     pub async fn auto_compact(&self, messages: &[Json]) -> Vec<Json> {
         let transcript_path = format!(
             "{}/transcript_{}.jsonl",

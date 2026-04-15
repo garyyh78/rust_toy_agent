@@ -1,26 +1,26 @@
 //! tools.rs - Tool definitions and dispatch
 //!
-//! TOOLS constant (JSON schema) and the dispatch_tools router.
-//! Path/file operations come from tool_runners, todo state from todo_manager.
+//! TOOLS constant (JSON schema) and the `dispatch_tools` router.
+//! Path/file operations come from `tool_runners`, todo state from `todo_manager`.
 //!
 //! ┌──────────────────────────────────────────────────────────────┐
 //! │                        tools.rs                              │
 //! ├──────────────────────────────────────────────────────────────┤
 //! │                                                              │
 //! │  TOOLS ── JSON schema sent to Anthropic API                  │
-//! │    ├── bash        ── run_bash()      [tool_runners]         │
-//! │    ├── read_file   ── run_read()      [tool_runners]         │
-//! │    ├── write_file  ── run_write()     [tool_runners]         │
-//! │    ├── edit_file   ── run_edit()      [tool_runners]         │
-//! │    └── todo        ── TodoManager.update() [todo_manager]    │
+//! │    ├── bash        ── `run_bash()`      [`tool_runners`]         │
+//! │    ├── `read_file`   ── `run_read()`      [`tool_runners`]         │
+//! │    ├── `write_file`  ── `run_write()`     [`tool_runners`]         │
+//! │    ├── `edit_file`   ── `run_edit()`      [`tool_runners`]         │
+//! │    └── todo        ── `TodoManager.update()` [`todo_manager`]    │
 //! │                                                              │
-//! │  dispatch_tools(name, input, workdir, todo)                  │
+//! │  `dispatch_tools(name`, input, workdir, todo)                  │
 //! │    │                                                         │
-//! │    ├── "bash"       ──→ run_bash()    ──→ (output, false)    │
-//! │    ├── "read_file"  ──→ run_read()    ──→ (output, false)    │
-//! │    ├── "write_file" ──→ run_write()   ──→ (output, false)    │
-//! │    ├── "edit_file"  ──→ run_edit()    ──→ (output, false)    │
-//! │    ├── "todo"       ──→ mgr.update()  ──→ (output, true)     │
+//! │    ├── "bash"       ──→ `run_bash()`    ──→ (output, false)    │
+//! │    ├── "`read_file`"  ──→ `run_read()`    ──→ (output, false)    │
+//! │    ├── "`write_file`" ──→ `run_write()`   ──→ (output, false)    │
+//! │    ├── "`edit_file`"  ──→ `run_edit()`    ──→ (output, false)    │
+//! │    ├── "todo"       ──→ `mgr.update()`  ──→ (output, true)     │
 //! │    └── _            ──→ None          ──→ (None,    false)   │
 //! └──────────────────────────────────────────────────────────────┘
 
@@ -424,7 +424,7 @@ pub fn tool_worktree_remove() -> Json {
 
 // -- Convenience collections --
 
-/// Core file tools (bash, read_file, write_file, edit_file)
+/// Core file tools (bash, `read_file`, `write_file`, `edit_file`)
 pub fn core_file_tools() -> Vec<Json> {
     vec![
         tool_bash(),
@@ -485,7 +485,7 @@ pub fn full_agent_tools() -> Vec<Json> {
     ]
 }
 
-/// Teammate agent tools (file tools + messaging + idle + claim_task)
+/// Teammate agent tools (file tools + messaging + idle + `claim_task`)
 pub fn teammate_tools() -> Vec<Json> {
     vec![
         tool_bash(),
@@ -498,7 +498,7 @@ pub fn teammate_tools() -> Vec<Json> {
     ]
 }
 
-/// Skill loading agent tools (file tools + load_skill)
+/// Skill loading agent tools (file tools + `load_skill`)
 pub fn skill_agent_tools() -> Vec<Json> {
     let mut tools = core_file_tools();
     tools.push(tool_load_skill());
@@ -632,8 +632,7 @@ pub fn dispatch_tools(
         "todo" => {
             let items = input["items"]
                 .as_array()
-                .map(|a| a.as_slice())
-                .unwrap_or(&[]);
+                .map_or_else(|| &[] as &[serde_json::Value], |a| a.as_slice());
             let mut mgr = match todo.lock() {
                 Ok(m) => m,
                 Err(e) => return (Some(format!("Error: lock poisoned: {e}")), true),

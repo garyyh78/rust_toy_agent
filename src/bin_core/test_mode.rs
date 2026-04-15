@@ -84,7 +84,6 @@ pub async fn run_test_mode(test_name: &str) {
     }
 }
 
-const SWE_BENCH_INSTANCE_ID: &str = "django__django-12113";
 const SWE_BENCH_REPO_URL: &str = "https://github.com/django/django.git";
 const SWE_BENCH_COMMIT: &str = "62254c5202e80a68f4fe6572a2be46a3d953de1a";
 

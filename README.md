@@ -42,10 +42,16 @@ src/
 ├── context_compact.rs      # Three-layer context compression pipeline
 ├── agent_teams.rs          # Agent teams with persistent named teammates + message bus
 ├── team_protocols.rs        # Shutdown and plan approval protocols with request tracking
-├── worktree.rs              # Git worktree management with task isolation
 ├── background_tasks.rs     # Background task execution with DashMap + mpsc notifications
 ├── task_system.rs          # Persistent task management with dependency graph
 ├── e2e_test.rs              # End-to-end test runner with result tracking
+├── worktree/                # Git worktree management (directory module)
+│   ├── mod.rs               # Re-exports
+│   ├── binding.rs           # TaskBinding
+│   ├── events.rs            # EventBus, WorktreeEvent
+│   ├── index.rs             # WorktreeIndex
+│   ├── git.rs               # Git2 helper functions
+│   └── manager.rs           # WorktreeManager (git2 calls)
 └── bin_core/
     ├── mod.rs               # Module root
     ├── agent_loop.rs         # Full agent loop with tool dispatch
@@ -56,6 +62,22 @@ src/
     ├── teammate.rs           # Teammate loop implementation
     └── test_mode.rs          # Test mode runner
 ```
+
+### Directory Usage
+
+| Directory/File | Purpose | Key Contents |
+|----------------|---------|--------------|
+| `src/` | Main source code | All Rust modules |
+| `src/bin_core/` | Binary core components | REPL, state, dispatch, test mode |
+| `src/worktree/` | Git worktree management | WorktreeManager, TaskBinding, EventBus |
+| `tests/` | Integration tests | CLI and mock LLM tests |
+| `task_tests/` | E2E test cases | JSON test definitions + results |
+| `scripts/` | Utility scripts | Hooks, SWE-bench runners |
+| `scripts/git-hooks/` | Git hooks | Pre-commit hook |
+| `scripts/swe_bench_data/` | SWE-bench data | Repository clones for benchmarks |
+| `scripts/swe_bench_results/` | SWE-bench outputs | Prediction files |
+| `logs/` | Session logs | Auto-generated log files |
+| `learning/` | Learning/data | Agent learning artifacts |
 
 ### Module Responsibilities
 
@@ -202,7 +224,7 @@ task_tests/
 | `bin_core::dispatch` | 5 | Tool dispatch routing, unknown/idle/compact/worktree handlers |
 | `bin_core::constants` | 1 | LEAD constant |
 
-Total: **205 unit tests + 4 CLI integration**. Run `cargo test` to verify.
+Total: **205 unit tests + 4 CLI integration + 3 mock-LLM integration = 212**. Run `cargo test` to verify.
 
 ## License
 

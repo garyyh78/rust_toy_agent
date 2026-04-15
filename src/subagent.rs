@@ -41,7 +41,7 @@ impl Subagent {
             .unwrap_or_else(|| format!("Unknown tool: {tool_name}"))
     }
 
-    /// Execute all tool_use blocks in a response and return the results.
+    /// Execute all `tool_use` blocks in a response and return the results.
     fn execute_tool_calls(&self, response: &Json) -> Vec<Json> {
         let mut results = Vec::new();
         if let Some(content) = response["content"].as_array() {

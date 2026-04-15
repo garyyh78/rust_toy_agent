@@ -1,4 +1,4 @@
-//! background_tasks.rs - Background task execution with notification queue
+//! `background_tasks.rs` - Background task execution with notification queue
 //!
 //! Run commands in background threads. A notification queue is drained
 //! before each LLM call to deliver results.
@@ -145,9 +145,8 @@ impl BackgroundManager {
                     &truncate_chars(&task.command, MAX_STATUS_COMMAND_DISPLAY),
                     result
                 );
-            } else {
-                return format!("Error: Unknown task {tid}");
             }
+            return format!("Error: Unknown task {tid}");
         }
 
         if self.tasks.is_empty() {

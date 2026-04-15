@@ -32,6 +32,21 @@ jobs:
           cache-on-failure: "true"
       - run: cargo clippy --all-targets -- -D warnings
 
+  clippy_pedantic:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "main"
+          cache-targets: "true"
+          cache-on-failure: "true"
+      - run: cargo clippy --all-targets -- -W clippy::pedantic
+
   test:
     runs-on: ubuntu-latest
     steps:

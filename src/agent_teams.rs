@@ -1,7 +1,7 @@
-//! agent_teams.rs - Agent Teams with persistent named teammates
+//! `agent_teams.rs` - Agent Teams with persistent named teammates
 //!
 //! Persistent named agents with per-member inboxes. Each teammate runs
-//! its own agent loop in a separate thread. Communication via std::sync channels.
+//! its own agent loop in a separate thread. Communication via `std::sync` channels.
 //!
 //! ```text
 //!     TeammateManager
@@ -67,9 +67,9 @@ impl Message {
     }
 }
 
-/// MessageBus: thread-safe inbox per teammate.
+/// `MessageBus`: thread-safe inbox per teammate.
 ///
-/// Uses Arc<RwLock<HashMap>> for shared mutable state across threads.
+/// Uses Arc<`RwLock`<HashMap>> for shared mutable state across threads.
 pub struct MessageBus {
     /// Accumulated inbox per member name.
     inbox: Arc<RwLock<HashMap<String, Vec<Message>>>>,
@@ -152,7 +152,7 @@ fn default_team_name() -> String {
     "default".to_string()
 }
 
-/// TeammateManager: persistent named agents with file-based config.
+/// `TeammateManager`: persistent named agents with file-based config.
 pub struct TeammateManager {
     dir: PathBuf,
     config: TeamConfig,

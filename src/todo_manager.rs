@@ -1,11 +1,11 @@
-//! todo_manager.rs - Task tracking for the agent
+//! `todo_manager.rs` - Task tracking for the agent
 //!
 //! The LLM calls the "todo" tool to update this state.
 //! Validation enforces: max 20 items, non-empty text,
-//! one in_progress at a time, valid status enum.
+//! one `in_progress` at a time, valid status enum.
 //!
 //! ┌────────────────────────────────────────────────────────────┐
-//! │                     TodoManager                            │
+//! │                     `TodoManager`                            │
 //! ├────────────────────────────────────────────────────────────┤
 //! │                                                            │
 //! │  items: Vec<TodoItem>                                      │
@@ -13,10 +13,10 @@
 //! │  update(&[Json]) -> Result<String>                         │
 //! │    ├── validate max 20 items                               │
 //! │    ├── require non-empty text                              │
-//! │    ├── one in_progress at a time                           │
-//! │    └── valid status enum (pending/in_progress/completed)   │
+//! │    ├── one `in_progress` at a time                           │
+//! │    └── valid status enum (`pending/in_progress/completed`)   │
 //! │                                                            │
-//! │  render() -> String                                        │
+//! │  `render()` -> String                                        │
 //! │    [ ] #1: pending task                                    │
 //! │    [>] #2: in progress task                                │
 //! │    [x] #3: completed task                                  │

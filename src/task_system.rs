@@ -1,4 +1,4 @@
-//! task_system.rs - Persistent task management with dependency graph
+//! `task_system.rs` - Persistent task management with dependency graph
 //!
 //! Tasks persist as JSON files in .tasks/ so they survive context compression.
 //! Each task has a dependency graph (blockedBy/blocks).

@@ -1,24 +1,24 @@
-//! tool_runners.rs - Path helpers and file/shell tool runners
+//! `tool_runners.rs` - Path helpers and file/shell tool runners
 //!
 //! Everything that touches the filesystem or runs shell commands lives here.
 //!
 //! ┌──────────────────────────────────────────────────────────┐
-//! │                    tool_runners                          │
+//! │                    `tool_runners`                          │
 //! ├──────────────────────────────────────────────────────────┤
 //! │                                                          │
 //! │  Path helpers:                                           │
 //! │  ┌──────────────┐    ┌──────────────┐                    │
-//! │  │normalize_path│───→│  safe_path   │                    │
+//! │  │`normalize_path`│───→│  `safe_path`   │                    │
 //! │  └──────────────┘    └──────┬───────┘                    │
 //! │   resolves . and ..        │ rejects paths that          │
 //! │                            │ escape workdir              │
 //! │                            │                             │
-//! │  Tool runners (all call safe_path first):                │
+//! │  Tool runners (all call `safe_path` first):                │
 //! │                            │                             │
 //! │            ┌───────────────┼───────────────┐             │
 //! │            │               │               │             │
 //! │     ┌──────▼──────┐ ┌─────▼──────┐ ┌──────▼──────┐      │
-//! │     │  run_bash   │ │  run_read  │ │ run_write   │      │
+//! │     │  `run_bash`   │ │  `run_read`  │ │ `run_write`   │      │
 //! │     └──────┬──────┘ └─────┬──────┘ └──────┬──────┘      │
 //! │            │              │               │              │
 //! │     sh -c command   read file N    write + mkdir         │
@@ -26,7 +26,7 @@
 //! │     50KB cap         50KB cap       50KB cap             │
 //! │                                                          │
 //! │     ┌──────▼──────┐                                      │
-//! │     │  run_edit   │                                      │
+//! │     │  `run_edit`   │                                      │
 //! │     └─────────────┘                                      │
 //! │      replacen(old, new, 1)                                │
 //! └──────────────────────────────────────────────────────────┘
@@ -39,7 +39,7 @@ use std::process::Command as Proc;
 // Owns both the original and canonicalized workdir paths, computed once at construction.
 
 /// A container for workdir paths that are computed once at initialization.
-/// The canonical form is used for sandboxing checks in safe_path().
+/// The canonical form is used for sandboxing checks in `safe_path()`.
 #[derive(Clone)]
 pub struct WorkdirRoot {
     /// The original user-specified workdir path (as-provided).
@@ -49,7 +49,7 @@ pub struct WorkdirRoot {
 }
 
 impl WorkdirRoot {
-    /// Create a new WorkdirRoot from a user-provided path.
+    /// Create a new `WorkdirRoot` from a user-provided path.
     /// Computes the canonical form once; the original is stored as-is.
     pub fn new(path: &Path) -> Result<Self, String> {
         let canonical = path
@@ -109,9 +109,7 @@ fn canonicalize_partial(p: &Path) -> Result<PathBuf, String> {
             return Err("root has no name".to_string());
         }
     }
-    let canon = existing
-        .canonicalize()
-        .map_err(|e| format!("canon: {e}"))?;
+    let canon = existing.canonicalize().map_err(|e| format!("canon: {e}"))?;
     let mut result = canon;
     if !suffix.as_os_str().is_empty() {
         result.push(&suffix);
