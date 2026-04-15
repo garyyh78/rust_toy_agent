@@ -34,8 +34,11 @@ quicksort
 quicksort_random
 random_sort
 
-# Local todo / notes
-todo.txt
+# Proptest regression seeds
+proptest-regressions/
+
+# Worktrees (unused)
+.worktrees/
 
 # Local editor config
 .editorconfig
