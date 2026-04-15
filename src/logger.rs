@@ -112,6 +112,9 @@ impl SessionLogger {
             if let Err(e) = writeln!(f, "{line}") {
                 tracing::error!(error = %e, "log file write failed");
             }
+            if let Err(e) = f.flush() {
+                tracing::error!(error = %e, "log file flush failed");
+            }
         }
     }
 

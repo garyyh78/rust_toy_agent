@@ -297,7 +297,7 @@ fn extract_patch_from_workdir(workdir: &Path) -> String {
     }
 
     let output = Command::new("git")
-        .args(["diff"])
+        .args(["diff", "HEAD"])
         .current_dir(workdir)
         .output();
 
