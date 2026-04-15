@@ -1,6 +1,6 @@
 {
   "name": "json_parse",
-  "prompt": "Write a Python script that reads the file data.json from the workspace, parses it as JSON, finds all objects where the 'score' field is greater than 80, collects the 'name' fields from those objects, sorts alphabetically, and prints them comma-separated on one line.",
+  "prompt": "Write a Python script that reads the file data.json from the current directory, parses it as JSON, finds all objects where the 'score' field is greater than 80, collects the 'name' fields from those objects, sorts alphabetically, and prints them comma-separated on one line.",
   "expected_output": "alice,charlie",
   "language": "python"
 }

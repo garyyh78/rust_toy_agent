@@ -1,6 +1,6 @@
 {
   "name": "bug_fix",
-  "prompt": "In the workspace directory, there is a buggy Python script called buggy_sort.py. It is supposed to count how many words in a given list are palindromes, then sort the palindromes alphabetically and print only the count and the sorted list on one line like: <count> [<sorted_palindromes>]. However, the script has 3 bugs that cause it to produce wrong output. Find and fix all the bugs, then run the corrected script. Print only the final correct output line.",
+  "prompt": "In the current directory, there is a buggy Python script called buggy_sort.py. It is supposed to count how many words in a given list are palindromes, then sort the palindromes alphabetically and print only the count and the sorted list on one line like: <count> [<sorted_palindromes>]. However, the script has 3 bugs that cause it to produce wrong output. Find and fix all the bugs, then run the corrected script. Print only the final correct output line.",
   "expected_output": "5 ['anna', 'civic', 'deified', 'racecar', 'radar']",
   "language": "python"
 }

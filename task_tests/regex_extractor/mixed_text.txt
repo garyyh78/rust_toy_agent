@@ -1,0 +1,1 @@
+Contact Alice at alice@example.com for help. Bob can be reached at bob@test.org. For general inquiries, email charlie@domain.net. Invalid emails like @example.com and no-at-sign should be ignored.
