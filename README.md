@@ -165,12 +165,17 @@ Run E2E tests to evaluate the agent on real programming tasks:
 ```bash
 # Run a specific test
 cargo run -- --test sum_1_to_n
-Available tests: `sum_1_to_n`, `fibonacci_sum`, `prime_sum`, `literary_style_detection`.
+Available tests: sum_1_to_n, fibonacci_sum, prime_sum, literary_style_detection, and more in task_tests/
 
-# Run all tests in task_tests/
+# Run all tests using the script
+./scripts/e2e/run_all.sh
+
+# Run manually
 for dir in task_tests/*/; do
     test_name=$(basename "$dir")
-    cargo run -- --test "$test_name"
+    if [ -f "$dir/test.json" ]; then
+        cargo run -- --test "$test_name"
+    fi
 done
 ```
 
@@ -179,10 +184,28 @@ done
 ```
 task_tests/
 ├── sum_1_to_n/
-│   └── test.json          # Test case definition
-└── test_results/          # Auto-generated results
-    └── sum_1_to_n_<timestamp>.json
+│   ├── test.json          # Test case definition
+│   └── sum_integers.py    # Test input files
+├── bug_fix/
+│   ├── test.json
+│   └── buggy_sort.py
+├── test_results/          # Auto-generated results
+│   └── sum_1_to_n_<timestamp>.json
+└── ...
 ```
+
+**Available Tests:**
+- `api_mock` - JSON parsing
+- `bug_fix` - Fix palindrome sorting bugs
+- `csv_transform` - CSV data processing
+- `dependency_resolve` - Topological sort
+- `fibonacci_sum` - C++ Fibonacci sum
+- `graph_bfs` - Rust BFS implementation
+- `literary_style_detection` - Author style detection
+- `multiline_transform` - Text transformation
+- `prime_sum` - TypeScript prime calculation
+- `regex_extractor` - Email extraction
+- `sum_1_to_n` - Python sum program
 
 **Test JSON format:**
 
