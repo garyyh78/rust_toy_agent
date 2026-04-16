@@ -197,31 +197,33 @@ Work:
    Why this matters:
    - This project handles API keys and executes shell commands, so supply-chain and secret hygiene matter more than average.
    Work:
-   - Keep `gitleaks`, but document allowlisting and false-positive handling.
-   - Make `cargo audit` reliable.
-   - Consider adding `cargo deny` for license/advisory policy.
-   - Add checks for outdated or unused dependencies only if they are kept low-noise.
-   - Review script safety and shellcheck scope.
+    - Keep `gitleaks`, but document allowlisting and false-positive handling.
+    - Make `cargo audit` reliable.
+    - Consider adding `cargo deny` for license/advisory policy.
+    - Add checks for outdated or unused dependencies only if they are kept low-noise.
+    - Review script safety and shellcheck scope.
    Deliverables:
-   - CI checks that cover both code quality and dependency/security posture.
+    - CI checks that cover both code quality and dependency/security posture.
    Done when:
-   - The repo has a repeatable, documented security baseline.
+    - The repo has a repeatable, documented security baseline.
+   -> DONE: gitleaks (v2), cargo audit (with install step), shellcheck (pinned to 2.0.0)
 
 12. Create a real release process.
    Why this matters:
    - There are no tags, no changelog workflow, and no GitHub Releases story today.
    Work:
-   - Adopt semantic versioning.
-   - Maintain `CHANGELOG.md`.
-   - Add a tag-triggered release workflow.
-   - Build release binaries for supported platforms.
-   - Upload binaries plus checksums.
-   - Optionally generate SBOM/provenance if you want a best-in-class release trail.
-   - Decide whether to use `cargo-dist`, custom workflows, or another release tool.
+    - Adopt semantic versioning.
+    - Maintain `CHANGELOG.md`.
+    - Add a tag-triggered release workflow.
+    - Build release binaries for supported platforms.
+    - Upload binaries plus checksums.
+    - Optionally generate SBOM/provenance if you want a best-in-class release trail.
+    - Decide whether to use `cargo-dist`, custom workflows, or another release tool.
    Deliverables:
-   - Version tags and downloadable GitHub Release artifacts.
+    - Version tags and downloadable GitHub Release artifacts.
    Done when:
-   - Users can install a stable version without cloning the repo.
+    - Users can install a stable version without cloning the repo.
+   -> DONE: release.yml workflow for tags v*, builds linux/darwin x64+arm64, checksums, auto-release
 
 13. Make coverage and quality metrics actionable.
    Why this matters:
