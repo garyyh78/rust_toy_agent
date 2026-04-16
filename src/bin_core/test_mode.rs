@@ -1,12 +1,10 @@
+use crate::bin_core::state::State;
 use crate::e2e_test::{load_test_case, print_test_result, run_test, save_test_result};
 use crate::llm_client::AnthropicClient;
-use crate::todo_manager::TodoManager;
-use crate::tool_runners::WorkdirRoot;
 
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
 
 /// Run the agent in test mode with a specific test case.
 pub async fn run_test_mode(test_name: &str) {
@@ -39,8 +37,6 @@ pub async fn run_test_mode(test_name: &str) {
     let client = AnthropicClient::from_env();
     let model = env::var("MODEL_ID").expect("MODEL_ID not set");
 
-    let todo = Mutex::new(TodoManager::new());
-
     let test_workdir = workdir.join("task_tests").join(test_name).join("workspace");
     if let Err(e) = std::fs::remove_dir_all(&test_workdir) {
         tracing::warn!(error = %e, "could not remove test_workdir");
@@ -49,20 +45,15 @@ pub async fn run_test_mode(test_name: &str) {
         tracing::warn!(error = %e, "could not create test_workdir");
     }
 
-    let workdir_root = WorkdirRoot::new(&test_workdir).expect("Failed to create workdir root");
+    let state = match State::new(client, model, test_workdir) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to initialize state");
+            std::process::exit(1);
+        }
+    };
 
-    // Use a no-op logger for test mode
-    let mut logger = crate::logger::SessionLogger::stderr_only();
-
-    let result = run_test(
-        &client,
-        &model,
-        &test_case,
-        &workdir_root,
-        &todo,
-        &mut logger,
-    )
-    .await;
+    let result = run_test(&state, &test_case).await;
 
     if let Err(e) = save_test_result(&result, &results_dir) {
         tracing::error!(error = %e, "failed to save test result");
@@ -141,32 +132,23 @@ pub async fn run_swe_bench_mode(instance_id: &str) {
     let client = AnthropicClient::from_env();
     let model = env::var("MODEL_ID").expect("MODEL_ID not set");
 
-    let todo = Mutex::new(TodoManager::new());
     if let Err(e) = std::fs::create_dir_all(&results_dir) {
         tracing::error!(error = %e, "failed to create results directory");
     }
-    let log_path = results_dir.join(format!("session_{instance_id}.log"));
-    let mut logger =
-        crate::logger::SessionLogger::new(log_path.to_str().unwrap()).unwrap_or_else(|e| {
-            tracing::error!(error = %e, "failed to create session logger, falling back to stderr");
-            crate::logger::SessionLogger::stderr_only()
-        });
 
     let repo_dir = swe_dir.join("repo");
-    let workdir_root = WorkdirRoot::new(&repo_dir).expect("Failed to create workdir root");
+    let state = match State::new(client, model.clone(), repo_dir.clone()) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to initialize state");
+            std::process::exit(1);
+        }
+    };
 
     eprintln!("Running agent on SWE-bench instance...");
     eprintln!();
 
-    let result = run_test(
-        &client,
-        &model,
-        &test_case,
-        &workdir_root,
-        &todo,
-        &mut logger,
-    )
-    .await;
+    let result = run_test(&state, &test_case).await;
 
     let patch = extract_patch_from_workdir(&repo_dir);
     save_predictions(instance_id, &model, &patch, &results_dir);

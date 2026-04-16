@@ -1,16 +1,11 @@
-use crate::agent_loop::{agent_loop, extract_final_text, Messages};
-use crate::llm_client::AnthropicClient;
-use crate::logger::SessionLogger;
-use crate::todo_manager::TodoManager;
-use crate::tool_runners::WorkdirRoot;
-use crate::tools::TOOLS;
+use crate::bin_core::agent_loop::{agent_loop, extract_final_text, Messages};
+use crate::bin_core::state::State;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::sync::Mutex;
 use std::time::Instant;
 
 #[derive(Debug, Clone)]
@@ -56,30 +51,23 @@ pub fn get_test_timestamp() -> String {
     Local::now().format("%Y%m%d_%H%M%S").to_string()
 }
 
-/// Extract all text from every message in the conversation,
-/// including tool results. Used to verify answers even when the
-/// agent's final response is verbose or empty.
 fn extract_all_text(messages: &[Json]) -> String {
     let mut text = String::new();
     for msg in messages {
         let content = &msg["content"];
-        // Handle string content (simple user/assistant messages)
         if let Some(s) = content.as_str() {
             text.push_str(s);
             text.push('\n');
             continue;
         }
-        // Handle array content (blocks)
         if let Some(blocks) = content.as_array() {
             for block in blocks {
-                // Text blocks
                 if block["type"] == "text" {
                     if let Some(t) = block["text"].as_str() {
                         text.push_str(t);
                         text.push('\n');
                     }
                 }
-                // Tool result blocks
                 if block["type"] == "tool_result" {
                     if let Some(c) = block["content"].as_str() {
                         text.push_str(c);
@@ -99,14 +87,7 @@ fn extract_all_text(messages: &[Json]) -> String {
     text
 }
 
-pub async fn run_test(
-    client: &AnthropicClient,
-    model: &str,
-    test_case: &TestCase,
-    workdir: &WorkdirRoot,
-    todo: &Mutex<TodoManager>,
-    logger: &mut SessionLogger,
-) -> TestResult {
+pub async fn run_test(state: &State, test_case: &TestCase) -> TestResult {
     let start_time = Instant::now();
     let commit = get_git_commit();
     let test_time = get_test_timestamp();
@@ -115,24 +96,13 @@ pub async fn run_test(
         "You are a coding agent at {}. \
 Use the todo tool to plan multi-step tasks. Mark in_progress before starting, completed when done. \
 Prefer tools over prose.",
-        workdir.as_path().display()
+        state.workdir.display()
     );
 
-    let tools: Json = serde_json::from_str(TOOLS).unwrap();
     let mut history: Messages =
         vec![serde_json::json!({"role": "user", "content": test_case.prompt})];
 
-    let (total_input_tokens, total_output_tokens, steps) = agent_loop(
-        client,
-        model,
-        &system,
-        &tools,
-        &mut history,
-        workdir,
-        todo,
-        logger,
-    )
-    .await;
+    let result = agent_loop(state, &mut history, &system, None, "test").await;
 
     let response_text = extract_final_text(&history);
 
@@ -142,33 +112,26 @@ Prefer tools over prose.",
     let actual_output = response_text.trim().to_string();
     let expected_output = test_case.expected_output.trim().to_string();
 
-    // Check final text first, then fall back to searching all messages
-    // (including tool outputs) — the agent may have computed the right answer
-    // but produced a verbose final response.
     let passed = actual_output.contains(&expected_output)
         || actual_output == expected_output
         || extract_all_text(&history).contains(&expected_output);
 
     TestResult {
         name: test_case.name.clone(),
-        model: model.to_string(),
+        model: state.model.clone(),
         commit,
         test_time,
         passed,
-        steps,
+        steps: result.rounds,
         actual_output,
         expected_output,
         total_time_ms,
-        total_tokens: total_input_tokens + total_output_tokens,
-        input_tokens: total_input_tokens,
-        output_tokens: total_output_tokens,
+        total_tokens: result.total_input_tokens + result.total_output_tokens,
+        input_tokens: result.total_input_tokens,
+        output_tokens: result.total_output_tokens,
     }
 }
 
-/// Loads a test case from a JSON file.
-///
-/// # Errors
-/// Returns an error if the file cannot be read, parsed, or is missing required fields.
 pub fn load_test_case(path: &Path) -> Result<TestCase, String> {
     let content =
         std::fs::read_to_string(path).map_err(|e| format!("Failed to read test file: {e}"))?;
@@ -232,10 +195,6 @@ pub fn print_test_result(result: &TestResult) {
     }
 }
 
-/// Writes the result JSON to disk. Does not touch git — curation is manual (see README).
-///
-/// # Errors
-/// Returns an error if the directory cannot be created or the file cannot be written.
 pub fn save_test_result(result: &TestResult, results_dir: &Path) -> std::io::Result<()> {
     fs::create_dir_all(results_dir)?;
 

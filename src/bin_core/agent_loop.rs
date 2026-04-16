@@ -8,6 +8,33 @@ use serde_json::Value as Json;
 use std::path::PathBuf;
 use std::time::Instant;
 
+pub type Messages = Vec<Json>;
+
+pub fn extract_final_text(messages: &[Json]) -> String {
+    let mut text = String::new();
+    if let Some(last) = messages.last() {
+        if let Some(blocks) = last["content"].as_array() {
+            for block in blocks {
+                if block["type"] == "text" {
+                    if let Some(t) = block["text"].as_str() {
+                        if !text.is_empty() {
+                            text.push('\n');
+                        }
+                        text.push_str(t);
+                    }
+                }
+            }
+        }
+    }
+    text
+}
+
+pub struct AgentLoopResult {
+    pub total_input_tokens: u64,
+    pub total_output_tokens: u64,
+    pub rounds: u32,
+}
+
 /// Main agent loop that orchestrates LLM calls and tool execution.
 pub async fn agent_loop(
     state: &State,
@@ -15,10 +42,12 @@ pub async fn agent_loop(
     system: &str,
     metrics_out: Option<&PathBuf>,
     session_id: &str,
-) {
+) -> AgentLoopResult {
     let tools = state.tools();
     let mut rounds_since_todo = 0usize;
     let mut round: u32 = 0;
+    let mut total_input_tokens: u64 = 0;
+    let mut total_output_tokens: u64 = 0;
 
     loop {
         let start = Instant::now();
@@ -74,9 +103,25 @@ pub async fn agent_loop(
             Ok(r) => r,
             Err(e) => {
                 tracing::error!(error = %e, "LLM call failed");
-                return;
+                return AgentLoopResult {
+                    total_input_tokens,
+                    total_output_tokens,
+                    rounds: round,
+                };
             }
         };
+
+        // Track tokens
+        if let Some(usage) = response.get("usage") {
+            total_input_tokens += usage
+                .get("input_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            total_output_tokens += usage
+                .get("output_tokens")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+        }
 
         messages.push(serde_json::json!({
             "role": "assistant",
@@ -84,7 +129,11 @@ pub async fn agent_loop(
         }));
 
         if response["stop_reason"] != "tool_use" {
-            return;
+            return AgentLoopResult {
+                total_input_tokens,
+                total_output_tokens,
+                rounds: round,
+            };
         }
 
         // Tool execution
@@ -137,7 +186,11 @@ pub async fn agent_loop(
                 Ok(t) => t,
                 Err(e) => {
                     tracing::error!(error = %e, "lock poisoned");
-                    return;
+                    return AgentLoopResult {
+                        total_input_tokens,
+                        total_output_tokens,
+                        rounds: round,
+                    };
                 }
             };
             todo.items().iter().any(|t| t.status != "completed")
@@ -158,7 +211,11 @@ pub async fn agent_loop(
         if manual_compact {
             tracing::info!("triggering manual compact");
             *messages = state.compactor.auto_compact(messages).await;
-            return;
+            return AgentLoopResult {
+                total_input_tokens,
+                total_output_tokens,
+                rounds: round,
+            };
         }
 
         // Emit metrics

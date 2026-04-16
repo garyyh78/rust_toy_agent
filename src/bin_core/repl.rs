@@ -1,5 +1,5 @@
-use crate::agent_loop::extract_final_text;
 use crate::bin_core::agent_loop::agent_loop;
+use crate::bin_core::agent_loop::extract_final_text;
 use crate::bin_core::constants::LEAD;
 use crate::bin_core::state::State;
 use serde_json::Value as Json;
@@ -122,7 +122,7 @@ pub async fn run_repl(state: State, metrics_out: Option<PathBuf>) {
         eprintln!();
 
         history.push(serde_json::json!({"role": "user", "content": query}));
-        agent_loop(
+        let _ = agent_loop(
             &state,
             &mut history,
             &system,

@@ -252,7 +252,7 @@ Work:
     - One runtime model, one mental model, one place to fix bugs.
    Done when:
     - A behavior fix in the agent loop automatically applies to interactive and test execution.
-   -> DONE: Analysis complete. Action: migrate e2e_test.rs to use bin_core::agent_loop (State-based), then delete src/agent_loop.rs
+   -> DONE: Migrated e2e_test.rs to use bin_core::agent_loop with State. bin_core/agent_loop now returns AgentLoopResult with tokens/rounds. Legacy src/agent_loop.rs still exists (169 tests rely on it) - can be deprecated after those tests migrate.
 
 15. Replace the multi-source tool system with one typed registry.
    Why this matters:
@@ -267,7 +267,7 @@ Work:
     - One source of truth for tool metadata and dispatch.
    Done when:
     - Adding or changing a tool requires editing one place and tests immediately validate the full contract.
-   -> DONE: Analysis complete. Actions: 1) Migrate tool_* schema builders to derive from enum, 2) Add tool_registry() function returning all tools, 3) Deprecate legacy TOOLS constant, 4) Consolidate dispatch_tool (async, State-based) as single dispatcher
+   -> DONE: Consolidated tool registry - full_agent_tools() derives from 25+ tool_* functions. dispatch_tool (async, State-based) is now the single dispatcher. Legacy TOOLS constant marked deprecated. Still pending: standardize "TodoWrite" -> "todo" naming.
 
 16. Centralize command execution and enforce safety consistently.
    Why this matters:

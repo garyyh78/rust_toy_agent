@@ -18,3 +18,5 @@ pub mod repl;
 pub mod state;
 pub mod teammate;
 pub mod test_mode;
+
+pub use agent_loop::{extract_final_text, AgentLoopResult, Messages};

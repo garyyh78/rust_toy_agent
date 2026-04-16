@@ -1,4 +1,3 @@
-pub mod agent_loop;
 pub mod agent_teams;
 pub mod background_tasks;
 pub mod bin_core;
