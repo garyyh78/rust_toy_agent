@@ -1,9 +1,16 @@
 #!/bin/bash
-# Run SWE-bench Lite single test
-# Usage: ./run_single_swe.sh <instance_id>
+# Run SWE-bench single test
+# Usage: ./run_single_swe.sh [--eval-only] <instance_id>
 # Example: ./run_single_swe.sh django__django-12113
+# Example: ./run_single_swe.sh --eval-only django__django-12113
 
 set -euo pipefail
+
+MODE="run"
+if [[ "${1:-}" == "--eval-only" ]]; then
+    MODE="eval-only"
+    shift
+fi
 
 INSTANCE_ID="${1:-marshmallow-code__marshmallow-1359}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -11,15 +18,16 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_DIR"
 
-echo "Running SWE-bench Lite test for: $INSTANCE_ID"
+echo "Running SWE-bench test for: $INSTANCE_ID"
 echo ""
 
-# Build and run the agent
-# cargo run -- --swe-bench "$INSTANCE_ID"
-
-# Get the results directory
 RESULTS_DIR="$PROJECT_DIR/swe_bench_results"
 PREDICTION_FILE="$RESULTS_DIR/${INSTANCE_ID}.jsonl"
+
+if [[ "$MODE" == "run" ]]; then
+    echo "Running agent..."
+    cargo run -- --swe-bench "$INSTANCE_ID"
+fi
 
 if [[ ! -f "$PREDICTION_FILE" ]]; then
     echo "Error: Prediction file not found: $PREDICTION_FILE" >&2
