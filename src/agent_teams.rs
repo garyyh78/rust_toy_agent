@@ -89,6 +89,9 @@ impl MessageBus {
     }
 
     /// Send a message to a teammate's inbox.
+    ///
+    /// # Errors
+    /// Returns an error if `msg_type` is invalid.
     pub fn send(
         &self,
         sender: &str,
@@ -114,6 +117,9 @@ impl MessageBus {
     }
 
     /// Send a broadcast message to all teammates except the sender.
+    ///
+    /// # Errors
+    /// Returns an error if sending to any teammate fails.
     pub fn broadcast(
         &self,
         sender: &str,
@@ -159,6 +165,11 @@ pub struct TeammateManager {
 }
 
 impl TeammateManager {
+    /// Create a new teammate manager, initializing the team directory if needed.
+    ///
+    /// # Errors
+    /// Returns an `io::Error` if the directory cannot be created or if config
+    /// cannot be written.
     pub fn new(team_dir: &Path) -> std::io::Result<Self> {
         fs::create_dir_all(team_dir)?;
         let config = Self::load_config(team_dir);
@@ -197,6 +208,9 @@ impl TeammateManager {
     }
 
     /// Add or update a teammate in the config.
+    ///
+    /// # Errors
+    /// Returns an error if the member is currently active, or if config save fails.
     pub fn spawn(&mut self, name: &str, role: &str) -> Result<String, String> {
         // If member already exists, only allow respawn if idle or shutdown
         if let Some(member) = self.config.members.iter_mut().find(|m| m.name == name) {

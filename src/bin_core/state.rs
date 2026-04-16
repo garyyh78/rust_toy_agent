@@ -32,6 +32,11 @@ pub struct State {
 }
 
 impl State {
+    /// Initialize a new State with the given client, model, and workdir.
+    ///
+    /// # Errors
+    /// Returns an error if any underlying storage (`.tasks`, `.team`, worktree)
+    /// cannot be initialized.
     pub fn new(
         client: AnthropicClient,
         model: String,

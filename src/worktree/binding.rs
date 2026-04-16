@@ -6,6 +6,10 @@ pub struct TaskBinding {
 }
 
 impl TaskBinding {
+    /// Create a new task binding manager.
+    ///
+    /// # Errors
+    /// Returns an error if the directory cannot be created.
     pub fn new(tasks_dir: &PathBuf) -> std::io::Result<Self> {
         fs::create_dir_all(tasks_dir)?;
         Ok(Self {

@@ -3,7 +3,7 @@
 # Usage: ./run_single_swe.sh <instance_id>
 # Example: ./run_single_swe.sh django__django-12113
 
-set -e
+set -euo pipefail
 
 INSTANCE_ID="${1:-marshmallow-code__marshmallow-1359}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,11 +15,17 @@ echo "Running SWE-bench Lite test for: $INSTANCE_ID"
 echo ""
 
 # Build and run the agent
-cargo run -- --swe-bench "$INSTANCE_ID"
+# cargo run -- --swe-bench "$INSTANCE_ID"
 
 # Get the results directory
 RESULTS_DIR="$PROJECT_DIR/swe_bench_results"
 PREDICTION_FILE="$RESULTS_DIR/${INSTANCE_ID}.jsonl"
+
+if [[ ! -f "$PREDICTION_FILE" ]]; then
+    echo "Error: Prediction file not found: $PREDICTION_FILE" >&2
+    echo "Did the agent run successfully?" >&2
+    exit 2
+fi
 
 echo ""
 echo "Running SWE-bench evaluation..."
@@ -27,13 +33,15 @@ echo ""
 
 # Check if swebench is installed
 if ! python3 -c "import swebench" 2>/dev/null; then
-    echo "Installing swebench..."
+    echo "swebench not found. Consider using a virtual environment:"
+    echo "  python3 -m venv .venv && source .venv/bin/activate"
+    echo "Installing swebench to user environment..."
     pip3 install swebench
 fi
 
 # Run evaluation
 python3 -m swebench.harness.run_evaluation \
-    --dataset_name princeton-nlp/SWE-bench_Lite \
+    --dataset_name princeton-nlp/SWE-bench \
     --predictions_path "$PREDICTION_FILE" \
     --max_workers 1 \
     --instance_ids "$INSTANCE_ID" \

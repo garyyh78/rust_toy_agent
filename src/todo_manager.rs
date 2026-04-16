@@ -54,6 +54,9 @@ impl TodoManager {
     }
 
     /// Validate and replace the full todo list. Returns rendered output on success.
+    ///
+    /// # Errors
+    /// Returns an error if items exceed limits or have invalid data.
     pub fn update(&mut self, items_json: &[Json]) -> Result<String, String> {
         if items_json.len() > MAX_TODO_ITEMS {
             return Err(format!("Max {MAX_TODO_ITEMS} todos allowed"));

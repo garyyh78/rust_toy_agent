@@ -82,6 +82,10 @@ pub struct WorktreeManager {
 }
 
 impl WorktreeManager {
+    /// Create a new worktree manager.
+    ///
+    /// # Errors
+    /// Returns an error if the worktrees directory cannot be created.
     pub fn new(repo_root: &Path) -> std::io::Result<Self> {
         let worktrees_dir = repo_root.join(".worktrees");
         fs::create_dir_all(&worktrees_dir)?;

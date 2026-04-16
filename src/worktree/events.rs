@@ -20,6 +20,10 @@ pub struct EventBus {
 }
 
 impl EventBus {
+    /// Create a new event bus.
+    ///
+    /// # Errors
+    /// Returns an error if directory creation or file init fails.
     pub fn new(event_log_path: &PathBuf) -> std::io::Result<Self> {
         if let Some(parent) = event_log_path.parent() {
             fs::create_dir_all(parent)?;

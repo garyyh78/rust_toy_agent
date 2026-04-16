@@ -125,6 +125,10 @@ impl AnthropicClient {
 
     /// Send a messages request to the Anthropic API.
     /// Returns the full JSON response on success, or an error string on failure.
+    ///
+    /// # Errors
+    /// Returns an error string if the API request fails (network error, auth failure,
+    /// rate limit, or server error).
     pub async fn create_message(
         &self,
         model: &str,
@@ -140,6 +144,10 @@ impl AnthropicClient {
     /// Send a pre-built request body to the API with retry/backoff on
     /// transient failures (429, 5xx, network errors). 4xx client errors are
     /// surfaced immediately since they will not succeed on retry.
+    ///
+    /// # Errors
+    /// Returns an error string on transient failure after max retries, or on fatal
+    /// error (auth failure, invalid request).
     pub async fn send_body(&self, body: &Json) -> Result<Json, String> {
         let url = format!("{}/v1/messages", self.base_url);
         let mut backoff = INITIAL_BACKOFF;

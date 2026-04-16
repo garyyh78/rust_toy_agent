@@ -51,6 +51,9 @@ pub struct WorkdirRoot {
 impl WorkdirRoot {
     /// Create a new `WorkdirRoot` from a user-provided path.
     /// Computes the canonical form once; the original is stored as-is.
+    ///
+    /// # Errors
+    /// Returns an error if the path cannot be canonicalized.
     pub fn new(path: &Path) -> Result<Self, String> {
         let canonical = path
             .canonicalize()
@@ -119,6 +122,9 @@ fn canonicalize_partial(p: &Path) -> Result<PathBuf, String> {
 
 /// Resolve a user-supplied path relative to a pre-canonicalized workdir.
 /// Uses the precomputed canonical root to avoid repeated syscalls.
+///
+/// # Errors
+/// Returns an error if the path escapes the workdir.
 pub fn safe_path(p: &str, workdir_root: &WorkdirRoot) -> Result<PathBuf, String> {
     let workdir_canon = workdir_root.as_canonical();
     let workdir = workdir_root.as_path();

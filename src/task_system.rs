@@ -50,6 +50,10 @@ pub struct TaskManager {
 }
 
 impl TaskManager {
+    /// Create a new task manager.
+    ///
+    /// # Errors
+    /// Returns an error if the tasks directory cannot be created.
     pub fn new(tasks_dir: &Path) -> std::io::Result<Self> {
         fs::create_dir_all(tasks_dir)?;
         let next_id = Self::max_id(tasks_dir) + 1;
@@ -92,6 +96,10 @@ impl TaskManager {
         fs::write(path, content)
     }
 
+    /// Create a new task.
+    ///
+    /// # Errors
+    /// Returns an error if the task cannot be saved.
     pub fn create(&mut self, subject: &str, description: &str) -> std::io::Result<String> {
         let task = Task::new(self.next_id, subject, description);
         self.save(&task)?;
@@ -99,6 +107,10 @@ impl TaskManager {
         Ok(serde_json::to_string_pretty(&task).unwrap_or_default())
     }
 
+    /// Get a task by ID.
+    ///
+    /// # Errors
+    /// Returns an error if the task cannot be read or parsed.
     pub fn get(&self, task_id: u32) -> Result<String, String> {
         let task = self.load(task_id)?;
         Ok(serde_json::to_string_pretty(&task).unwrap_or_default())

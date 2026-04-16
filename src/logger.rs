@@ -93,6 +93,9 @@ impl SessionLogger {
 
     /// Open a log file at `path`, creating parent directories as needed.
     /// Also writes to stderr.
+    ///
+    /// # Errors
+    /// Returns an error if directory creation or file open fails.
     pub fn new(path: &str) -> Result<Self, String> {
         if let Some(parent) = Path::new(path).parent() {
             fs::create_dir_all(parent).map_err(|e| format!("Failed to create log dir: {e}"))?;

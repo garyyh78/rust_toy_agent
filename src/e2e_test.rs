@@ -233,6 +233,9 @@ pub fn print_test_result(result: &TestResult) {
 }
 
 /// Writes the result JSON to disk. Does not touch git — curation is manual (see README).
+///
+/// # Errors
+/// Returns an error if the directory cannot be created or the file cannot be written.
 pub fn save_test_result(result: &TestResult, results_dir: &Path) -> std::io::Result<()> {
     fs::create_dir_all(results_dir)?;
 

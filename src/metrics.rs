@@ -14,6 +14,10 @@ pub struct RoundMetrics {
     pub host: &'static str,
 }
 
+/// Write metrics to a JSON log file.
+///
+/// # Errors
+/// Returns an error if the file cannot be opened or written.
 pub fn emit(path: &Path, m: &RoundMetrics) -> std::io::Result<()> {
     use std::io::Write;
     let mut f = std::fs::OpenOptions::new()

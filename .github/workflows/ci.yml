@@ -94,3 +94,29 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITLEAKS_LICENSE_URL: https://raw.githubusercontent.com/gitleaks/gitleaks/master/LICENSE
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ludeeus/action-shellcheck@master
+        env:
+          SHELLCHECK_OPTS: -SC2038 -SC2086
+        with:
+          scan: .
+          name: shellcheck
+          ignore: scripts/swe_bench_data/
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: "main"
+          cache-targets: "true"
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate coverage report
+        run: cargo llvm-cov --all-targets --summary-only

@@ -24,6 +24,10 @@ pub struct WorktreeIndex {
 }
 
 impl WorktreeIndex {
+    /// Create a new worktree index.
+    ///
+    /// # Errors
+    /// Returns an error if the index file cannot be created.
     pub fn new(index_path: &Path) -> std::io::Result<Self> {
         if let Some(parent) = index_path.parent() {
             fs::create_dir_all(parent)?;
@@ -54,11 +58,19 @@ impl WorktreeIndex {
         fs::write(&self.path, content).map_err(|e| e.to_string())
     }
 
+    /// Find a worktree by name.
+    ///
+    /// # Errors
+    /// Returns an error if the index cannot be read or parsed.
     pub fn find(&self, name: &str) -> Result<Option<WorktreeEntry>, String> {
         let entries = self.load()?;
         Ok(entries.into_iter().find(|e| e.name == name))
     }
 
+    /// Add a worktree entry to the index.
+    ///
+    /// # Errors
+    /// Returns an error if adding fails (duplicate, read/write error).
     pub fn add(&self, entry: &WorktreeEntry) -> Result<(), String> {
         let mut entries = self.load()?;
         if entries.iter().any(|e| e.name == entry.name) {
@@ -68,6 +80,10 @@ impl WorktreeIndex {
         self.save(&entries)
     }
 
+    /// Update the status of a worktree.
+    ///
+    /// # Errors
+    /// Returns an error if the index cannot be read or written.
     pub fn update_status(&self, name: &str, status: &str) -> Result<(), String> {
         let mut entries = self.load()?;
         for entry in &mut entries {
@@ -93,6 +109,10 @@ impl WorktreeIndex {
         self.save(&entries)
     }
 
+    /// List all worktrees in the index.
+    ///
+    /// # Errors
+    /// Returns an error if the index cannot be read or parsed.
     pub fn list_all(&self) -> Result<String, String> {
         let entries = self.load()?;
         if entries.is_empty() {
