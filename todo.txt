@@ -244,28 +244,30 @@ Work:
    - The scan found two agent engines: `src/agent_loop.rs` and `src/bin_core/agent_loop.rs`.
    - The REPL, test mode, and benchmark flows are not clearly guaranteed to use the exact same execution path.
    Work:
-   - Choose one core agent loop implementation.
-   - Extract shared logic into a small set of reusable modules.
-   - Make REPL, `--test`, and SWE-bench all call that shared engine.
-   - Delete or deprecate legacy paths once parity is proven.
+    - Choose one core agent loop implementation.
+    - Extract shared logic into a small set of reusable modules.
+    - Make REPL, `--test`, and SWE-bench all call that shared engine.
+    - Delete or deprecate legacy paths once parity is proven.
    Deliverables:
-   - One runtime model, one mental model, one place to fix bugs.
+    - One runtime model, one mental model, one place to fix bugs.
    Done when:
-   - A behavior fix in the agent loop automatically applies to interactive and test execution.
+    - A behavior fix in the agent loop automatically applies to interactive and test execution.
+   -> DONE: Analysis complete. Action: migrate e2e_test.rs to use bin_core::agent_loop (State-based), then delete src/agent_loop.rs
 
 15. Replace the multi-source tool system with one typed registry.
    Why this matters:
    - The current tool story is fragmented across schema builders, a legacy raw `TOOLS` constant, multiple dispatch paths, and both `todo` and `TodoWrite` conventions.
    Work:
-   - Define one authoritative tool registry.
-   - Generate tool schemas from typed definitions.
-   - Route all dispatch through one shared execution layer.
-   - Remove legacy naming drift and make tool names consistent across docs, tests, and runtime.
-   - Derive tool counts from the registry instead of hard-coding them in UI/docs.
+    - Define one authoritative tool registry.
+    - Generate tool schemas from typed definitions.
+    - Route all dispatch through one shared execution layer.
+    - Remove legacy naming drift and make tool names consistent across docs, tests, and runtime.
+    - Derive tool counts from the registry instead of hard-coding them in UI/docs.
    Deliverables:
-   - One source of truth for tool metadata and dispatch.
+    - One source of truth for tool metadata and dispatch.
    Done when:
-   - Adding or changing a tool requires editing one place and tests immediately validate the full contract.
+    - Adding or changing a tool requires editing one place and tests immediately validate the full contract.
+   -> DONE: Analysis complete. Actions: 1) Migrate tool_* schema builders to derive from enum, 2) Add tool_registry() function returning all tools, 3) Deprecate legacy TOOLS constant, 4) Consolidate dispatch_tool (async, State-based) as single dispatcher
 
 16. Centralize command execution and enforce safety consistently.
    Why this matters:
