@@ -84,8 +84,15 @@ pub async fn run_test_mode(test_name: &str) {
     }
 }
 
-const SWE_BENCH_REPO_URL: &str = "https://github.com/django/django.git";
-const SWE_BENCH_COMMIT: &str = "62254c5202e80a68f4fe6572a2be46a3d953de1a";
+struct SWEInstance {
+    repo: String,
+    base_commit: String,
+    problem_statement: String,
+}
+
+fn get_github_url(repo: &str) -> String {
+    format!("https://github.com/{}.git", repo)
+}
 
 pub async fn run_swe_bench_mode(instance_id: &str) {
     let workdir = env::current_dir().unwrap();
@@ -106,10 +113,12 @@ pub async fn run_swe_bench_mode(instance_id: &str) {
         std::process::exit(1);
     }
 
-    setup_swe_instance(&swe_dir, instance_id);
+    let swe_instance = get_problem_statement(instance_id);
+    let repo_url = get_github_url(&swe_instance.repo);
+
+    setup_swe_instance(&swe_dir, instance_id, &repo_url, &swe_instance.base_commit);
 
     let repo_dir = swe_dir.join("repo");
-    let problem_statement = get_problem_statement(instance_id);
     let prompt = format!(
         "You are working on a bug fix in the repository at {}.\n\n\
         Problem Description:\n{}\n\n\
@@ -119,7 +128,7 @@ pub async fn run_swe_bench_mode(instance_id: &str) {
         3. Ensure your changes are correct by testing if needed\n\n\
         Use the todo tool to plan your approach.",
         repo_dir.display(),
-        problem_statement
+        swe_instance.problem_statement
     );
 
     let test_case = crate::e2e_test::TestCase {
@@ -175,7 +184,7 @@ pub async fn run_swe_bench_mode(instance_id: &str) {
     eprintln!();
     eprintln!("To evaluate, run:");
     eprintln!("  python -m swebench.harness.run_evaluation \\");
-    eprintln!("    --dataset_name princeton-nlp/SWE-bench_Lite \\");
+    eprintln!("    --dataset_name princeton-nlp/SWE-bench \\");
     eprintln!(
         "    --predictions_path {} \\",
         results_dir.join(format!("{instance_id}.jsonl")).display()
@@ -185,8 +194,10 @@ pub async fn run_swe_bench_mode(instance_id: &str) {
     eprintln!("    --run_id rust_toy_agent_test");
 }
 
-fn setup_swe_instance(workdir: &Path, instance_id: &str) {
+fn setup_swe_instance(workdir: &Path, instance_id: &str, repo_url: &str, commit: &str) {
     eprintln!("Setting up SWE-bench instance: {instance_id}");
+    eprintln!("  Repo: {}", repo_url);
+    eprintln!("  Commit: {}", commit);
 
     let repo_dir = workdir.join("repo");
     if repo_dir.exists() {
@@ -196,7 +207,7 @@ fn setup_swe_instance(workdir: &Path, instance_id: &str) {
 
     eprintln!("  Cloning repository...");
     let clone_output = Command::new("git")
-        .args(["clone", SWE_BENCH_REPO_URL, repo_dir.to_str().unwrap()])
+        .args(["clone", repo_url, repo_dir.to_str().unwrap()])
         .output();
 
     match clone_output {
@@ -216,7 +227,7 @@ fn setup_swe_instance(workdir: &Path, instance_id: &str) {
 
     eprintln!("  Checking out commit...");
     let checkout_output = Command::new("git")
-        .args(["checkout", SWE_BENCH_COMMIT])
+        .args(["checkout", commit])
         .current_dir(&repo_dir)
         .output();
 
@@ -236,19 +247,31 @@ fn setup_swe_instance(workdir: &Path, instance_id: &str) {
     }
 }
 
-fn get_problem_statement(instance_id: &str) -> String {
+fn get_problem_statement(instance_id: &str) -> SWEInstance {
     let workdir = env::current_dir().unwrap();
     let instance_file = workdir.join("swe_bench_instances.json");
 
     if instance_file.exists() {
         if let Ok(content) = std::fs::read_to_string(&instance_file) {
             if let Ok(instances) = serde_json::from_str::<serde_json::Value>(&content) {
-                if let Some(problem) = instances
-                    .get(instance_id)
-                    .and_then(|v| v.get("problem_statement"))
-                    .and_then(|v| v.as_str())
-                {
-                    return problem.to_string();
+                if let Some(instance) = instances.get(instance_id) {
+                    return SWEInstance {
+                        repo: instance
+                            .get("repo")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("django/django")
+                            .to_string(),
+                        base_commit: instance
+                            .get("base_commit")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("62254c5202e80a68f4fe6572a2be46a3d953de1a")
+                            .to_string(),
+                        problem_statement: instance
+                            .get("problem_statement")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                    };
                 }
             }
         }
@@ -256,26 +279,42 @@ fn get_problem_statement(instance_id: &str) -> String {
 
     fetch_problem_from_huggingface(instance_id).unwrap_or_else(|_| {
         if instance_id == "django__django-12113" {
-            return "admin_views.test_multidb fails with persistent test SQLite database. \
+            SWEInstance {
+                repo: "django/django".to_string(),
+                base_commit: "62254c5202e80a68f4fe6572a2be46a3d953de1a".to_string(),
+                problem_statement:
+                    "admin_views.test_multidb fails with persistent test SQLite database. \
             When using persistent SQLite databases for tests (to make use of --keepdb), \
             at least some test fails with: sqlite3.OperationalError: database is locked."
-                .to_string();
+                        .to_string(),
+            }
+        } else {
+            SWEInstance {
+                repo: "django/django".to_string(),
+                base_commit: "62254c5202e80a68f4fe6572a2be46a3d953de1a".to_string(),
+                problem_statement: format!("Fix the bug in instance: {}", instance_id),
+            }
         }
-        format!("Fix the bug in instance: {instance_id}")
     })
 }
 
-fn fetch_problem_from_huggingface(instance_id: &str) -> Result<String, String> {
+fn fetch_problem_from_huggingface(instance_id: &str) -> Result<SWEInstance, String> {
     let output = Command::new("python3")
         .args([
             "-c",
             &format!(
                 r#"
+import json
 from datasets import load_dataset
-ds = load_dataset('princeton-nlp/SWE-bench_Lite', split='test')
+ds = load_dataset('princeton-nlp/SWE-bench', split='test')
 for item in ds:
     if item['instance_id'] == '{instance_id}':
-        print(item['problem_statement'].replace('\n', '\\n'))
+        result = {{
+            'repo': item['repo'],
+            'base_commit': item['base_commit'],
+            'problem_statement': item['problem_statement'].replace('\n', '\\n')
+        }}
+        print(json.dumps(result))
         break
 "#
             ),
@@ -284,7 +323,17 @@ for item in ds:
         .map_err(|e| format!("Failed to run python: {e}"))?;
 
     if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        let output_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let parsed: serde_json::Value = serde_json::from_str(&output_str)
+            .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        Ok(SWEInstance {
+            repo: parsed["repo"].as_str().unwrap_or("").to_string(),
+            base_commit: parsed["base_commit"].as_str().unwrap_or("").to_string(),
+            problem_statement: parsed["problem_statement"]
+                .as_str()
+                .unwrap_or("")
+                .to_string(),
+        })
     } else {
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
