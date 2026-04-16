@@ -18,11 +18,18 @@ materials/
 # Session logs
 logs/
 
+# SWE-bench data (fetch with scripts/fetch_swe_bench_data.sh)
+scripts/swe_bench_data/
+
+# SWE-bench results (generated output)
+scripts/swe_bench_results/
+
 # Test workspaces
 task_tests/*/workspace/
 
 # E2E test result JSONs (transient artifacts; curate manually if valuable)
 task_tests/test_results/
+task_tests/*/test_results/
 
 # OS files
 .DS_Store
@@ -43,6 +50,8 @@ proptest-regressions/
 # Worktrees (unused)
 .worktrees/
 
-# Local editor config
+# Editor config (local only)
 .editorconfig
+
+# Local TODO (keep private)
 todo.txt

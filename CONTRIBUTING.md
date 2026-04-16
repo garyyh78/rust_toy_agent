@@ -9,7 +9,9 @@
 - `cargo test` — unit + integration tests
 - `cargo fmt --check`
 - `cargo clippy --all-targets -- -D warnings`
-- `cargo e2e-sum` — live e2e (requires API key)
+
+## Running E2E tests
+- `cargo run --release -- --test sum_1_to_n` — live E2E (requires API key)
 
 ## Commit style
 - One logical change per commit.

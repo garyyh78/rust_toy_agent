@@ -1,53 +1,44 @@
 # Chapter 2: Working Memory — Giving the Agent a Scratchpad
 
-> "Controlling complexity is the essence of computer programming." — Brian Kernighan
+> **"Controlling complexity is the essence of computer programming."** — *Brian Kernighan*
 
-A large language model is, for our purposes, a stateless function:
-you give it a prompt, it gives you a response, and the next call
-remembers nothing unless you paste the previous turn into the input.
-Everything we call "agent memory" is an illusion the harness creates
-on the outside by carefully deciding what to put into the next prompt.
+---
 
-This chapter is about the simplest and most undervalued piece of that
-illusion: a **todo list the model can read and write itself**. It is
-not a data structure lesson. It is a lesson about what an agent needs
-in order to stay on task across dozens of tool calls, why free-form
-chain-of-thought is not enough, and how a fifty-line module can change
-the feel of your agent from "flailing" to "purposeful."
+## Introduction: The Memory Problem
 
-The code we read is `src/todo_manager.rs`. You already saw the type
-in Chapter 1. Now we ask: why does it exist?
+A large language model, for the purposes of building an agent, is fundamentally a **stateless function**: you provide it a prompt, it returns a response, and the very next call remembers **nothing** unless you explicitly paste the previous turn back into the input window. Everything we call "agent memory" is actually an **illusion** that the harness constructs from the outside by making deliberate, strategic decisions about exactly what to include in each successive prompt.
 
-## 2.1 The Problem: Models Forget What They Said
+This chapter explores the simplest yet most undervalued piece of that illusion: a **todo list that the model can both read and write independently**. This is not a lesson about data structures in the abstract — it is a practical lesson about what an agent genuinely needs to remain effective across dozens of tool calls, why free-form chain-of-thought reasoning alone is insufficient, and how a fifty-line Rust module can fundamentally transform your agent's behavior from appearing to "flail randomly" to operating with clear "purpose and direction."
 
-Picture an agent working on a realistic task: *"Migrate the user
-service from Postgres to SQLite and update the integration tests."*
-A careful human breaks that into half a dozen substeps — find the
-service, read the schema, port the migrations, stub out the SQL
-dialect differences, rerun the tests, handle fallout — and checks
-them off mentally as they go.
+The specific code we will examine lives in `src/todo_manager.rs`. You glimpsed one of its types in Chapter 1. Now we will understand **exactly why it exists** and **how it solves** the core memory challenge.
 
-A model, left to its own devices, does something worse than forget:
-it *improvises* a plan on every turn. Round one it says "first I'll
-read the schema." Round five it has read four files, completed two
-edits, and says "let me think about the plan" — and the plan it
-produces is subtly different from the one on round one, because the
-context window has filled up with tool output and the model is
-reconstructing its own intent from evidence.
+---
 
-This failure mode has a name in the agent-engineering community:
-**plan drift**. It is the single biggest reason long-running agents
-give up, repeat themselves, or ship half-finished work. The fix is
-not a smarter model. It is an **externalised plan**: a structured
-list the model writes into and reads back from, on every round,
-with the same ceremony it uses to call a tool.
+## 2.1 The Core Problem: Models Forget What They Said
 
-That is what `TodoManager` is. It is the agent's scratchpad, owned
-by the harness, surfaced through a tool.
+Let us paint a vivid picture of a realistic agent task: *"Migrate the user service from PostgreSQL to SQLite and update all integration tests accordingly."*
 
-## 2.2 The Shape of the Scratchpad
+A careful human developer would break this into a half-dozen distinct substeps — locate the service file, read the database schema, create porting migrations, handle SQL dialect differences, stub out incompatible features, run the test suite, diagnose any failures, and fix them methodically. They would check each substep off mentally (or on paper) as they complete it.
 
-Here is the whole type:
+**What does a model do when left to its own devices?**
+
+A model does something considerably worse than simply forgetting: it **improvises a new plan on every single turn**. Consider this very realistic interaction:
+
+- **Round 1:** "First, I will read the schema to understand the current structure."
+- **Round 2:** "Now let me find the user service file..."
+- **Round 3:** "Let me check the migrations directory..."
+- **Round 4:** "I'll examine the test files to understand what needs updating..."
+- **Round 5:** "Let me think about the overall plan..." — and the plan it produces is **subtly different** from the one it described in Round 1, because the context window has filled up with tool outputs and the model is now reconstructing its own intent purely from the accumulated evidence.
+
+This failure mode has an established name in the agent-engineering community: **plan drift**. It is arguably the single biggest reason why long-running agents abandon tasks, repeat themselves redundantly, or ship incomplete work. The solution is absolutely not a smarter model — it is an **externalized plan**: a structured list that the model writes into and reads back from, on every single round, with the same deliberate ceremony it uses to invoke any other tool.
+
+This is precisely what `TodoManager` accomplishes. It serves as the agent's **external scratchpad**, owned and managed by the harness, surfaced through a well-designed tool interface.
+
+---
+
+## 2.2 The Complete Shape of the Scratchpad
+
+Here is the **entire type definition** with all its supporting infrastructure:
 
 ```rust
 const MAX_TODO_ITEMS: usize = 20;
@@ -63,44 +54,23 @@ pub struct TodoManager {
 }
 ```
 
-Three fields per item, one vector per agent session, one constant
-cap at twenty. Every design choice here is load-bearing:
+Let us analyze **every design choice** with color-coded insights:
 
-1. **`id` is a string, not an auto-incrementing integer.** The
-   model assigns IDs when it writes the list. Human-readable IDs
-   like `"schema-port"` or `"1"` survive paraphrase and partial
-   re-planning. An auto-increment would force the harness to diff
-   lists, which is exactly the kind of bookkeeping we want the
-   model to do for us.
+### Field Design Philosophy
 
-2. **`status` is a string with exactly three values.** Not a
-   boolean `done`, not a `Done | Todo | Doing` enum. The three
-   values match a vocabulary every model already knows: *pending*,
-   *in_progress*, *completed*. Adding a fourth state — say,
-   *blocked* — is tempting, and wrong, until you have real data
-   showing the model wants it. Agent vocabularies should be
-   chosen once and then defended against creep.
+- **`id` is a string, not an auto-incrementing integer** (highlighted in **blue**). The model assigns these IDs when it constructs the list. Human-readable IDs like `"schema-port"` or `"1"` survive **paraphrasing and partial re-planning** gracefully. An auto-incrementing integer would force the harness to perform complex list diffing — and that bookkeeping complexity is exactly the kind of work we want the model to handle for us actively.
 
-3. **`MAX_TODO_ITEMS = 20`.** Twenty is not a magic number. It is
-   a statement about attention: a plan longer than twenty items
-   is almost certainly a plan the model will not finish, and is
-   almost always a plan that should have been two plans. The cap
-   forces the model to decompose hard problems into subtasks with
-   their own plans — usually via subagents, which we meet in
-   Chapter 9.
+- **`status` is a string accepting exactly three values** (highlighted in **green**). This is deliberately **not** a boolean `done` flag, and it is **not** a fancy `Done | Todo | Doing` enum. The three values — `pending`, `in_progress`, and `completed` — match a vocabulary that **every language model already knows intimately**. Adding a fourth state — for instance, `"blocked"` — is TEMPTING, but it is almost always WRONG until you have concrete production data showing the model actually wants and uses it. **Agent vocabularies should be chosen carefully once and then vigorously defended against feature creep.**
 
-4. **There is no nesting, no priority, no assignee, no deadline.**
-   A todo list for a human project manager has all of those. An
-   agent todo list does not, because the model is the only worker
-   and the harness is the only scheduler. Every field that exists
-   must pay rent: it must be something the model will read, write,
-   or reason about on a meaningful fraction of turns. Fields that
-   sound useful but go unused are just tokens the model has to
-   scan past on every round.
+- **`MAX_TODO_ITEMS = 20`** (highlighted in **purple**). This is absolutely NOT a magic number pulled from the air — it represents a concrete statement about **human (and AI) attention span**. A plan comprising more than twenty items is almost certainly a plan that the model will not finish successfully, and almost always a plan that should have been decomposed into two separate plans. This hard cap forces the model to break genuinely hard problems into smaller sub-tasks with their own dedicated plans — typically through the use of **subagents**, which we explore thoroughly in Chapter 9.
 
-## 2.3 The Invariants
+- **There is absolutely no nesting, no priority ranking, no assignee field, and no deadline** (highlighted in **orange**). A todo list for a human project manager typically includes all of those sophisticated features. An agent todo list deliberately omits them all because the model is the sole worker AND the harness is the sole scheduler. Every single field that exists **must pay its rent**: it must be something the model will read, write, or actively reason about on a meaningful percentage of turns. Fields that sound theoretically useful but go unused in practice are simply wasted tokens that the model has to unnecessarily scan past on every single round.
 
-Read the validation loop again, from `update`:
+---
+
+## 2.3 The Invariants: Rules That Keep the Agent Honest
+
+Let us examine the critical validation loop from the `update` method, with detailed explanations:
 
 ```rust
 if items_json.len() > MAX_TODO_ITEMS {
@@ -119,75 +89,65 @@ if in_progress_count > 1 {
 }
 ```
 
-Four rules, each fighting a specific failure mode of real agents:
+These **four rules** exist for specific, identifiable reasons — each one fights a particular failure mode that we have observed in real deployed agents:
 
-* **Cap the size.** Stops the model from turning the todo list into
-  a brain dump and burning tokens on it every round.
-* **Reject empty text.** Stops the model from creating placeholder
-  rows like `{id: "2", text: "", status: "pending"}` and then
-  filling them in later — an easy habit to fall into, and one that
-  makes the rendered list unreadable.
-* **Enum the status.** Stops the model from inventing states. If
-  you let the model write `status: "doing"`, it will, and then on
-  round seventeen it will write `"in-progress"`, and your renderer
-  will silently miscount. An enum check with a useful error
-  message teaches the model within one round.
-* **Exactly one `in_progress`.** This is the important one. It
-  enforces single-tasking. A well-behaved agent has exactly one
-  task in flight and knows what it is. The moment you allow two,
-  the model starts *plan-hopping* — jumping between half-finished
-  tasks as it notices new subproblems — and the interaction turns
-  into a tangle.
+| Rule | Purpose | Failure Mode Prevented |
+|------|---------|-------------------|
+| **Cap the size** | Prevents the model from turning the todo list into a comprehensive brain dump | Burning excessive tokens on every round |
+| **Reject empty text** | Stops placeholder rows like `{id: "2", text: "", status: "pending"}` | Unreadable rendered lists |
+| **Enum the status** | Prevents the model from inventing new states like `"doing"` vs `"in-progress"` | Silent miscounting in rendering |
+| **Exactly one `in_progress`** | Enforces single-tasking discipline | "Plan-hopping" between tasks |
 
-Notice what is not enforced: you can mark a `completed` task back
-to `pending`, you can reorder items, you can delete half the list.
-These are things humans do all the time during planning, and
-forbidding them would force the model into awkward workarounds.
-The rule of thumb for invariants on an agent-facing data structure
-is: **enforce the things that break you, permit the things that
-just look untidy.**
+### Why These Rules Matter
 
-## 2.4 Update Semantics: Replace, Don't Diff
+- **Enforcing the size limit** stops the model from creating an overwhelming list and burning tokens on it every single round. When the list grows past twenty items, the model can no longer reason effectively about the entire plan.
 
-Look at the last lines of `update`:
+- **Rejecting empty text** prevents the model from creating placeholder rows that it intends to fill in later — an easy habit to fall into, and one that renders the list completely unreadable for human reviewers.
+
+- **Enumerating the status** prevents the model from inventing states. If you permit the model to write `status: "doing"`, it will — and then on round seventeen it will write `"in-progress"`, and your renderer will **silently miscount** which tasks are actually in progress. An explicit enum check with a useful error message teaches the model the correct vocabulary **within one round**.
+
+- **Enforcing exactly one `in_progress`** is the most critical rule. It enforces **single-tasking**. A well-behaved agent has exactly one task genuinely in flight at any moment and knows explicitly what that task is. The moment you permit two concurrent in-progress tasks, the model begins **plan-hopping** — jumping between half-finished tasks as it notices new subproblems — and the entire interaction becomes an tangled mess.
+
+### What Is NOT Enforced
+
+Notice carefully what is **not** enforced: you absolutely **can** mark a `completed` task back to `pending`, you **can** freely reorder items, and you **can** delete half the list whenever you want. These are all things that humans do routinely during active planning, and **forbidding** them would force the model into awkward, unnatural workarounds.
+
+The practical rule of thumb for designing invariants on an **agent-facing data structure** is straightforward:
+
+> **Enforce the things that genuinely break the system, but permit the things that simply look untidy.**
+
+---
+
+## 2.4 Update Semantics: Replace Rather Than Diff
+
+Examine carefully the final lines of the `update` method:
 
 ```rust
 self.items = validated;
 Ok(self.render())
 ```
 
-The new list completely replaces the old one. The model does not
-send deltas like `{add: [...], remove: [...]}`, and it does not
-send per-item patches. It sends the entire list it wants the
-state to be, every time.
+The **entire new list** completely replaces the old one. The model does NOT send incremental changes like `{add: [...], remove: [...]}`, and it does NOT send per-item patches. Instead, it sends the **complete list** it wants the state to become, every single time.
 
-This is a deliberate and important choice. Three reasons:
+This is absolutely a **deliberate and important architectural choice**, backed by three distinct rationales:
 
-1. **Models are great at writing lists and terrible at diffing.**
-   Asking the model to produce a JSON patch against a list it
-   remembers from three rounds ago is a recipe for subtle bugs.
-   Asking it to produce the full list it wants is something every
-   model does reliably from its first day of training.
+### Why Full-Replace Is Superior
 
-2. **A full-replace tool is idempotent.** If the network flakes
-   and the tool call runs twice, the state is the same. Agents
-   should aim for idempotent tools wherever possible; Chapter 5
-   leans on this principle again.
+1. **Models excel at producing lists but struggle enormously with diffs.** Asking the model to generate a JSON patch against a list it remembers from three rounds ago is a recipe for **subtle, hard-to-debug** errors. Asking the model to simply produce the complete list it wants is something every model does reliably from its very first day of training.
 
-3. **The render of the new state is returned as the tool result.**
-   The model sees exactly what the harness now believes, and the
-   next round's context contains the canonical rendering rather
-   than the model's own memory of what it meant to write. This
-   is a small anti-drift trick that punches way above its weight.
+2. **A full-replace tool is inherently idempotent.** If the network flakes and a tool call executes twice, the final state remains identical. Agents should **actively aim for idempotent tools** wherever possible — Chapter 5 leans on this principle heavily when designing robust tool interfaces.
 
-The cost is that the model has to retype the whole list each round
-it changes anything. In practice this costs perhaps fifty tokens
-per update and buys a completely reliable scratchpad. Worth it.
+3. **The rendered new state is returned as the tool result.** The model sees exactly what the harness now believes, and the next round's context contains the **canonical rendering** rather than the model's potentially faulty memory of what it intended to write. This is a small but powerful **anti-drift technique** that punches enormously above its apparent weight.
 
-## 2.5 The Render: The Format Matters
+### The Real-World Cost
 
-The model does not see `Vec<TodoItem>`. It sees whatever string the
-harness renders:
+The genuine cost is that the model has to retype the **entire list** each round it changes absolutely anything. In practical terms, this costs perhaps **fifty additional tokens per update** and buys you a **completely reliable scratchpad** that never drifts. That trade-off is absolutely worth it.
+
+---
+
+## 2.5 The Rendering Format: Why Presentation Matters Enormously
+
+The model will **never** see `Vec<TodoItem>` directly. It sees whatever string the harness **renders**, through the specific formatting choice we made. Here is the actual rendered output:
 
 ```
 [ ] #1: Write failing test
@@ -196,76 +156,51 @@ harness renders:
 (1/3 completed)
 ```
 
-This is the only part of `TodoManager` the model ever touches with
-its eyes. Look at what it does and what it does not do:
+This rendered string is the **only part of `TodoManager`** that the model ever interacts with visually. Let us analyze precisely what it does — and what it deliberately chooses NOT to do:
 
-* **Status glyphs are distinctive.** `[ ]`, `[>]`, `[x]` — three
-  bracketed characters. They do not collide with anything the
-  model is likely to see in file contents, and they scan
-  vertically. Do *not* use emoji: they tokenize into multiple
-  tokens, they render inconsistently across terminals, and they
-  sometimes trigger the model to reply in emoji, which nobody wants.
+### Rendering Design Principles
 
-* **The ID is prefixed with `#`.** Not because the harness needs
-  the `#`, but because it makes the ID visually distinct from the
-  text, and because when the model references `#3` in its
-  reasoning it is clearly pointing at a todo item, not a heading
-  or an issue number.
+- **Status glyphs are distinctive and unambiguous** (highlighted in **blue**): `[ ]`, `[>]`, `[x]` — three carefully bracketed characters. They do **not** collide with anything the model is likely to encounter in file contents, and they scan beautifully vertically down the list. A crucial rule: **do NOT use emoji** — they tokenize into multiple tokens, render inconsistently across different terminals, and sometimes **trigger the model to reply in emoji**, which Nobody Wants.
 
-* **The progress line is absolute, not percentage.** `(1/3
-  completed)` beats `(33%)` because the model reads it and knows
-  both the remaining count and the total. Percentages hide the
-  scale of the work.
+- **The ID is prefixed with `#`** (highlighted in **green**). Not because the harness requires the `#`, but because it makes the ID **visually distinct** from the text content. Additionally, when the model references `#3` in its reasoning, it is unequivocally pointing at a specific todo item rather than a section heading or GitHub issue number.
 
-* **Empty lists render as `No todos.` not as a blank string.**
-  Blank strings confuse models. They wonder whether the tool
-  ran, whether the previous state is still in effect, whether
-  they need to create a list. A three-word message answers all
-  of that.
+- **The progress line is absolute, not percentage-based** (highlighted in **purple**): `(1/3 completed)` is strictly superior to `(33%)` because the model reads it and immediately understands both the **remaining count** AND the **total scale** of work. Percentages cleverly hide the actual scale of the work remaining.
 
-These are tiny decisions. They are also the decisions that
-separate an agent that uses the todo tool naturally from an agent
-that needs to be cajoled into it. Spend the extra ten minutes on
-the render; it is almost always the highest-leverage code in the
-whole module.
+- **Empty lists render as `No todos.`** (highlighted in **orange**), not as a blank string. Empty strings deeply confuse models — they wonder whether the tool ran correctly at all, whether the previous state is still in effect, whether they need to create a list from scratch. A three-word explicit message answers ALL of those questions definitively.
 
-## 2.6 What State Lives Here — and What Doesn't
+### The Professional Truth
 
-The todo list is not the agent's only working memory. It is one
-of several things the harness tracks on the side of the
-conversation:
+These are genuinely **tiny, seemingly insignificant decisions**. They are ALSO the specific decisions that separate an agent that uses the todo tool **naturally and effectively** from an agent that requires constant cajoling and prompting. **Spend the extra ten minutes designing a thoughtful render function** — it is almost always the single highest-leverage piece of code in the entire module, affecting every single round of interaction.
 
-| state | lives in | lifetime | visible to model |
-| --- | --- | --- | --- |
-| conversation history | `Messages` vec | the session | yes, always |
-| todo list | `TodoManager` | the session | on demand, via tool |
-| working directory | `WorkdirRoot` | the session | implicit in tool results |
-| background tasks | `BackgroundManager` | the session | on demand, via tool |
-| session log | `SessionLogger` | the session | no (human-only) |
+---
 
-A useful rule for deciding where a new piece of state belongs:
+## 2.6 What State Lives Where — and What Does Not
 
-> **If the model needs to read it every turn, put it in the system
-> prompt. If the model needs to read it sometimes, expose it through
-> a tool. If the model never needs to read it, keep it in the
-> harness and log it for humans.**
+The todo list is **not** the agent's only form of working memory. It is ONE of several distinct pieces of state that the harness tracks alongside the conversation:
 
-`TodoManager` lives in the middle bucket. The list is relevant most
-turns but not all; the model asks for it when planning and updates
-it when status changes. Burning system-prompt tokens to show the
-list on every call would be wasteful — worse, it would encourage
-the model to *not* update the list, because the state would feel
-"pushed" rather than "owned."
+| State Type | Lives In | Session Lifetime | Visibly Accessible to Model |
+|-----------|----------|-----------------|---------------------------|
+| Conversation history | `Messages` vec | Entire session | **Yes**, always visible |
+| Todo list | `TodoManager` | Entire session | **On demand**, via dedicated tool |
+| Working directory | `WorkdirRoot` | Entire session | **Implicitly** in all tool results |
+| Background tasks | `BackgroundManager` | Entire session | **On demand**, via dedicated tool |
+| Session log | `SessionLogger` | Entire session | **No** — human viewers only |
 
-Tools are the natural home for pull-based state.
+### The Critical Rule for State Placement
 
-## 2.7 Testing the Scratchpad
+Use this **invaluable heuristic** for deciding where any new piece of state belongs:
 
-Scroll to the bottom of `todo_manager.rs` and you will find
-seventeen unit tests. They look simple — and they are. But the
-discipline they enforce is important. Every rule we discussed above
-has a test, and every test runs in under a millisecond without
-touching the network, the filesystem, or an LLM:
+> **"If the model needs to read it on EVERY turn, put it directly in the system prompt. If the model needs to read it OCCASIONALLY, expose it through a dedicated tool call. If the model NEVER needs to read it, keep it entirely inside the harness and only log it for human reviewers."**
+
+By this rule, `TodoManager` occupies the **middle category**. The todo list is relevant on **most** turns but certainly NOT all — the model specifically requests it when actively planning and updates it when task statuses genuinely change. Burning precious system-prompt tokens to display the list on **every** call would be extraordinarily wasteful — worse, it would actively encourage the model to **NOT update the list**, because the state would feel artificially "pushed" rather than genuinely "owned."
+
+**Tools are unequivocally the natural home** for pull-based state like the todo manager.
+
+---
+
+## 2.7 Comprehensive Testing Strategy
+
+Scroll to the very bottom of `todo_manager.rs` and you will discover **seventeen comprehensive unit tests**. They appear deceptively simple — and they absolutely are. But the **discipline they enforce** is critically important. Every rule we discussed above has a corresponding test, and every test executes in under a single millisecond WITHOUT touching the network, filesystem, or any external LLM:
 
 ```rust
 #[test]
@@ -281,52 +216,40 @@ fn test_multiple_in_progress_rejected() {
 }
 ```
 
-Agent harnesses are systems with two kinds of tests:
+### Two Types of Tests for Agent Systems
 
-1. **Fast, deterministic tests** around the pure pieces: state
-   validators, path sanitisers, message truncators, renderers.
-   These run in CI on every commit and catch 80% of regressions.
+Agent harness systems require **two fundamentally different categories** of tests:
 
-2. **Slow, flaky, expensive tests** around the end-to-end agent:
-   a real LLM, a real task, a real scoreboard. These run nightly
-   at best.
+1. **Fast, purely deterministic tests** targeting the pure logic pieces: state validators, path sanitizers, message truncators, and renderers. These run in the continuous integration pipeline on **every single commit** and catch approximately **80% of all regressions**.
 
-The skill is making sure the pure pieces are genuinely pure, so
-the fast tests cover as much of the surface as possible. A
-`TodoManager` whose `update` needed network access would be a
-nightmare to test. One whose `update` is a pure function of
-`(old state, new items)` is trivial. When you design agent
-state, ask at every step: *can this be tested without a network
-call?* If the answer is no, separate the impure part.
+2. **Slow, flaky, and genuinely expensive tests** covering the fully end-to-end agent behavior: requiring a real LLM, real tasks, and a complete scoring methodology. These can realistically only run **nightly at best**.
 
-## 2.8 Exercises
+### The Crucial Skill
 
-1. Add a `cancelled` status to `TodoManager` and see how many
-   other files in `src/` mention the existing statuses. How
-   many places would need to know about `cancelled`? What does
-   that tell you about the cost of adding a status?
+The genuinely critical skill is making absolutely certain that the **pure pieces are genuinely pure**, so that the fast tests cover as much of the critical surface area as realistically possible. A `TodoManager` whose `update` method needed network access would be an absolute nightmare to test effectively. A `TodoManager` whose `update` is a **pure function** of `(old_state, new_items)` is utterly trivial to test. **When designing agent state, ask at every single step: "Can this be tested without any network call?"** If the honest answer is no, immediately separate the impure part into its own abstraction.
 
-2. The current render sorts items by their position in the
-   input array. Would you sort `in_progress` first? Why might
-   the model behave differently if you did?
+---
 
-3. Replace the hard cap of 20 items with a soft warning: allow
-   up to 40 items but prepend `⚠ Long plan — consider
-   subagents` to the render when there are more than 20.
-   Would this change the model's behaviour? How would you
-   measure it?
+## Chapter 2 Summary and Transition
 
-4. Write a `TodoManager::stats()` method that returns a
-   `(pending, in_progress, completed)` triple. Then decide:
-   should this be exposed to the model as a new tool, or kept
-   as a harness-only helper? Re-read §2.6 before answering.
+In this chapter, we have thoroughly examined some of the most important concepts in all of agent engineering:
 
-5. Invent a second piece of harness state — say, "files the
-   agent has already read" — and sketch its API. Does it
-   belong in the system prompt, behind a tool, or in the
-   harness only? Defend your choice.
+1. **Established the fundamental problem** of why models "forget" and how plan drift destroys agent reliability over time.
 
-In Chapter 3 we watch `TodoManager` from the other side: we sit
-inside the agent loop in `src/agent_loop.rs` and see how the
-harness turns the model's tool calls into tool results, round
-after round, until the conversation naturally ends.
+2. **Designed the TodoManager structure** with explicit rationale for every field and constant — understanding why simple is always better than complex.
+
+3. **Implemented critical invariants** that enforce good behavior without being overly restrictive — the art of choosing what to permit versus what to forbid.
+
+4. **Justified the full-replace update semantics** rather than incremental diffs — understanding the deep reasons why simpler is more reliable.
+
+5. **Designed the rendering format** — appreciating how seemingly minor presentation choices create massive downstream effects on model behavior.
+
+6. **Established a clear taxonomy** of where different kinds of state belong in an agent system.
+
+7. **Understood the testing philosophy** that makes this code reliable: fast deterministic tests for pure logic, accepting that some things truly require slow end-to-end validation.
+
+In the **next chapter**, we will observe `TodoManager` from the other side of the equation. We will sit **inside the agent loop** in `src/agent_loop.rs` and see precisely how the harness transforms the model's abstract tool calls into actual tool results, round after round, until the conversation naturally concludes.
+
+---
+
+**Next:** Chapter 3 — The Agent Loop and Tool Results

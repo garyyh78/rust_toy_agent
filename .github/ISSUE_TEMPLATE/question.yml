@@ -1,0 +1,21 @@
+---
+name: Question
+about: Ask a question or get help
+labels: question
+assignees: ''
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Note: For bugs or features, please use the other issue templates.
+  - type: textarea
+    attributes:
+      label: Question
+      description: What would you like to ask?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Context
+      description: What have you tried so far?

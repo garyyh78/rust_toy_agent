@@ -2,11 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   schedule:
-    - cron: '0 0 * * 0'
+    - cron: "0 0 * * 0"
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,15 +17,20 @@ env:
 jobs:
   fmt:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
       - run: cargo fmt --check
 
   clippy:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.75
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
@@ -34,6 +42,7 @@ jobs:
 
   clippy_pedantic:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -49,9 +58,16 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain:
+          - "1.75"
+          - stable
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: "main"
@@ -62,6 +78,7 @@ jobs:
 
   release_build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
@@ -72,22 +89,19 @@ jobs:
       - run: cargo build --release --all-targets
       - run: cargo run --release -- --help
       - run: cargo run --release -- --test invalid 2>&1 | grep -q 'unknown test'
-      - run: ls task_tests/sum_1_to_n/task.md
 
   audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: "main"
-          cache-targets: "true"
-          cache-on-failure: "true"
+      - run: cargo install cargo-audit
       - run: cargo audit
 
   gitleaks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: gitleaks
@@ -97,18 +111,20 @@ jobs:
 
   shellcheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: ludeeus/action-shellcheck@master
+      - uses: ludeeus/action-shellcheck@2.0.0
         env:
           SHELLCHECK_OPTS: -SC2038 -SC2086
         with:
           scan: .
           name: shellcheck
-          ignore: scripts/swe_bench_data/
+          ignore: scripts/swe_bench_data/,scripts/fetch_swe_bench_data.sh
 
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

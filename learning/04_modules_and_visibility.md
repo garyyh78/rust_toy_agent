@@ -1,29 +1,31 @@
 # Chapter 4: Tool Design — The Contract With the Model
 
-> "The best programs are written so that computing machines can perform them quickly and so that human beings can understand them clearly." — Donald Knuth
+> **"The best programs are written so that computing machines can perform them quickly and so that human beings can understand them clearly."** — *Donald Knuth*
 
-Tools are the agent's hands. Whatever the harness chooses to expose —
-and whatever it chooses to *not* expose — defines the agent's
-capabilities, its failure modes, and, quietly, its personality. This
-chapter is about the craft of picking tools and shaping them so the
-model uses them well.
+---
 
-The code we read is `src/tools.rs` (the catalog and dispatcher) and
-`src/tool_runners.rs` (the implementations). Together they are about
-four hundred lines. Every line is a decision.
+## Introduction: Tools as the Agent's Hands
 
-## 4.1 What Counts as a Tool
+**Tools are the agent's hands.** Whatever the harness deliberately chooses to expose — and whatever it equally deliberately chooses to *not* expose — fundamentally defines three critical aspects of the agent: its genuine capabilities, its distinct failure modes, and perhaps most subtly, its emerging personality. This chapter is dedicated to the **craft of selecting tools** and **shaping them with care** so that the model uses them effectively and correctly every single time.
 
-In the tool-use protocol, a tool is four things:
+The code we will examine comes from two primary source files: `src/tools.rs` (which contains the tool catalog and the dispatcher) and `src/tool_runners.rs` (which contains all the implementations). Together, these two files encompass approximately **four hundred lines** of carefully considered code — and literally **every single line** represents a deliberate decision with real consequences.
 
-1. A **name** — a short string the model sees and repeats.
-2. A **description** — one or two sentences the model reads to
-   decide when to call it.
-3. An **input schema** — JSON Schema describing the arguments.
-4. A **runner** — the harness code that takes the arguments and
-   produces a string result.
+---
 
-The JSON blob for the `bash` tool in `rust_toy_agent`:
+## 4.1 What Precisely Counts as a Tool
+
+In the tool-use protocol that defines how the agent communicates with the model, a tool is unambiguously defined as **exactly four distinct components**:
+
+| Component | Description | Example |
+|-----------|-------------|---------|
+| **Name** | A short string that the model sees and repeats when invoking the tool | `"bash"`, `"read_file"`, `"todo"` |
+| **Description** | One or two sentences that the model actively reads to determine when to call it | `"Run a shell command."` |
+| **Input Schema** | A JSON Schema object comprehensively describing all acceptable arguments | `{"type": "object", "properties": {...}}` |
+| **Runner** | The actual harness code that accepts arguments and produces a string result | The `run_bash` function in Rust |
+
+### The JSON Tool Definition
+
+The precise JSON blob defining the `bash` tool in `rust_toy_agent` looks like this:
 
 ```json
 {
@@ -37,111 +39,105 @@ The JSON blob for the `bash` tool in `rust_toy_agent`:
 }
 ```
 
-Four properties, ten lines, zero wasted words. The description is
-four words. That is not laziness; it is calibration. `bash` is the
-most famous tool in software, and the model already knows what a
-shell command is. A paragraph of explanation here would dilute the
-model's attention for the tools it *doesn't* already know.
+This definition contains **four properties** and occupies **ten lines** with **zero wasted words**. The description is merely **four words long**. This is absolutely **not** laziness — it is careful **calibration**. The `bash` tool is the single most famous and widely understood tool in all of software engineering, and the model already comprehensively understands what a shell command is and does. A lengthy paragraph of explanatory text here would **dilute the model's precious attention** for the tools it genuinely does NOT already know.
 
-The opposite of this is the `todo` tool, whose description is
-`"Update task list. Track progress on multi-step tasks."` — two
-sentences, because the concept needs teaching. **Description length
-should scale with how surprising the tool is**, not with how
-important it is.
+### The Comparison with Todo Tool
 
-## 4.2 The Five Tools
+The polar opposite approach is taken with the `todo` tool, whose description is deliberately more expansive:
 
-`rust_toy_agent` exposes exactly five tools to the main agent:
+```
+"description": "Update task list. Track progress on multi-step tasks."
+```
 
-| tool | input | output | purpose |
-| --- | --- | --- | --- |
-| `bash` | `command` | stdout + stderr, capped | the universal escape hatch |
-| `read_file` | `path`, `limit?` | file contents, capped | inspect code |
-| `write_file` | `path`, `content` | confirmation | create new files |
-| `edit_file` | `path`, `old_text`, `new_text` | confirmation | modify existing files |
-| `todo` | `items[]` | rendered list | externalised planning |
+This is **two sentences**, because the concept genuinely requires some teaching — the model does not inherently understand how this particular scratchpad works or why it should update it regularly.
 
-Five. Not fifteen. The temptation to add more tools — `grep`,
-`find`, `git_status`, `list_directory`, `count_lines`, `move_file`,
-`search_and_replace` — is constant, and you must resist it. Every
-tool you add:
+> **The Essential Calibration Rule:** Description length should scale precisely with how **surprising** or **unusual** the tool is, NOT necessarily with how **important** the tool may be.
 
-* **Expands the system prompt** the model must read before every
-  response, costing tokens on every round.
-* **Adds a new failure mode** the harness must test and debug.
-* **Competes for the model's attention** — two tools that do
-  similar things force the model to make an irrelevant choice
-  and sometimes make the wrong one.
+---
 
-The `bash` tool eats the entire category of "things I could do with
-a shell command." `find`, `grep`, `ls`, `wc`, `git status` — all of
-them are one-liners through `bash`, and the model already knows the
-syntax. Adding a dedicated `grep` tool is usually a regression, not
-an improvement.
+## 4.2 The Exactly Five Tools
 
-**The rule of thumb: add a tool only when `bash` is insufficient or
-actively dangerous.**
+`rust_toy_agent` exposes **exactly five deliberately chosen tools** to the main agent:
 
-Why does `read_file` exist, then? Two reasons. First, the harness
-truncates and line-counts the output in ways a naive `cat` would
-not. Second, and more importantly, `read_file` is *idempotent and
-safe by construction* — no shell interpretation, no globs, no
-redirection. The model can use it without thinking about quoting.
-That matters because read operations dominate an agent's tool use,
-and you want the common path to be the easy one.
+| Tool Name | Input | Output | Purpose |
+|----------|-------|--------|---------|
+| **`bash`** | `command` (string) | stdout + stderr, intelligently capped | The universal escape hatch for any operation |
+| **`read_file`** | `path` (string), `limit?` (optional integer) | File contents, capped | Inspect code and text files |
+| **`write_file`** | `path` (string), `content` (string) | Confirmation message | Create brand new files |
+| **`edit_file`** | `path`, `old_text`, `new_text` | Confirmation or error message | Modify existing files with precision |
+| **`todo`** | `items[]` (array) | Rendered list with progress | Externalized planning and state tracking |
 
-`write_file` and `edit_file` exist for the same reason: writing a
-file through `bash` requires heredocs or `printf` with escaped
-newlines, and the model gets them wrong often enough that a
-dedicated tool pays for itself in one session.
+### The Critical Discipline: Five, Not Fifteen
 
-## 4.3 The `edit_file` Decision
+**Five tools. Not fifteen.** The persistent temptation to add more tools — such as `grep`, `find`, `git_status`, `list_directory`, `count_lines`, `move_file`, `search_and_replace` — is constant and must be **actively resisted**. Here is exactly why adding tools is genuinely harmful:
 
-Of the four file tools, `edit_file` deserves a section of its own.
-Its input schema:
+| Problem | Consequence |
+|--------|------------|
+| **System prompt expansion** | Every tool added expands the system prompt the model must read before EVERY response, costing precious tokens on EVERY single round |
+| **New failure modes** | Every new tool adds an entirely new category of failure modes that the harness must comprehensively test and debug |
+| **Attention competition** | Two tools that perform similar operations force the model to make a frequently irrelevant choice, and sometimes it chooses WRONG |
+
+### Why Bash Eats Everything
+
+**The `bash` tool comprehensively consumes the entire category** of "things I could do with a shell command." The commands `find`, `grep`, `ls`, `wc`, `git status` — absolutely all of them are simple one-liners accessible through `bash`, and the model already knows the complete syntax. **Adding a dedicated `grep` tool is usually a regression, not an improvement** — it fragments the model's attention without adding meaningful capability.
+
+> **Strict Rule of thumb:** Add a completely new tool ONLY when `bash` is genuinely **insufficient** for the task OR actively **dangerous** without proper isolation.
+
+### Why read_file Exists Separately
+
+So why does `read_file` exist as a distinct tool when `bash` can run `cat`? Precisely **two compelling reasons**:
+
+1. **The harness intelligently truncates and manages line counts** in ways that a naive `cat` command would not — providing consistent, predictable output formatting.
+
+2. **Critically, `read_file` is idempotent and safe by absolute construction**: absolutely NO shell interpretation, NO wildcard expansion, NO redirection possibilities. The model can use this tool **without thinking about quoting or escaping**. This matters enormously because **read operations dominate an agent's total tool usage**, and you absolutely want the most common execution path to be the easy, safe one.
+
+### Why write_file and edit_file Exist
+
+`write_file` and `edit_file` exist for the identical fundamental reason: writing a file through `bash` requires either heredocs or carefully escaped `printf` statements with properly escaped newlines, and the model gets these wrong **often enough** that a dedicated tool genuinely **pays for itself in a single session** of non-trivial editing.
+
+---
+
+## 4.3 The edit_file Decision: One of The Most Critical Tools
+
+Of the **four file-related tools**, `edit_file` absolutely deserves a dedicated section of its own. Its precise input schema:
 
 ```json
 "required": ["path", "old_text", "new_text"]
 ```
 
-The tool replaces the first occurrence of `old_text` in `path` with
-`new_text`. No regex, no line numbers, no patch format. Just a
-triple of literal strings.
+The tool replaces the **first occurrence** of `old_text` in the specified file path with `new_text`. There is absolutely **NO support for regex**, **NO line number dependencies**, and **NO complex patch format**. Just a straightforward triple of literal strings.
 
-This is the format every modern coding agent has converged on, and
-it is worth understanding why the alternatives lost:
+### The Design Convergence
 
-* **Line numbers are a nightmare.** Models do not count well, and
-  line numbers shift between turns as edits land. A "replace lines
-  42-57" tool misfires constantly.
-* **Regex patches invite injection bugs.** The model writes a
-  pattern, the harness compiles it, the pattern has an unescaped
-  special character, and suddenly the edit is a no-op or matches
-  too much. Worse, the errors are silent.
-* **Unified diffs are too token-heavy.** A six-byte change becomes
-  a twenty-line diff blob, and the model has to generate the
-  context lines exactly right, which it does not always manage.
-* **Direct AST edits are language-specific.** They work for one
-  codebase and break for the next. A coding agent must not care
-  whether the file is Python or TOML.
+This specific format — `old_text` / `new_text` as literal strings — is EXACTLY what **every modern coding agent has convergently arrived at**, and it is genuinely worth understanding in depth **why all the alternatives lost**:
 
-The `old_text` / `new_text` format sidesteps all of this. The model
-quotes enough surrounding context to make `old_text` unique in the
-file, the harness does a literal `str::replacen(old_text, new_text,
-1)`, and the result is either a clean change or a clean failure
-("old_text not found" / "old_text matched more than once"). Both
-outcomes are things the model can recover from on the next turn.
+### Why Line Numbers Are Terrible
+> **Models do not count well.** Line numbers shift between turns as edits land. A tool promising to "replace lines 42-57" misfires constantly because the model cannot reliably count to 42 — or more accurately, it cannot reliably account for prior edits that have already shifted line numbers.
 
-The one gotcha: if `old_text` is not unique, the tool replaces the
-*first* occurrence. In `rust_toy_agent`'s implementation it is
-`replacen(_, _, 1)` — one replacement. A more defensive version
-would error out and demand more context, and most modern agents do.
-This is worth noting as you design your own edit tool: **failing
-loudly is almost always better than doing something plausible**.
+### Why Regex Patches Invite Catastrophic Bugs
+> The model writes a regex pattern, the harness compiles it as-is, the pattern contains an unescaped special character character, and **the edit silently becomes a no-op OR matches far too much content than intended**. The truly terrifying part: these errors are **completely silent** — the tool reports "success" but the file is wrong.
 
-## 4.4 Shaping Inputs: What Makes a Good Schema
+### Why Unified Diffs Consume Too Many Tokens
+> A six-byte change typically becomes a **twenty-line diff blob** — the model has to generate all the context lines **exactly accurately** for the diff to apply, and it does not always manage this correctly. The tool failure rate becomes unacceptable.
 
-Look at `read_file`:
+### Why Direct AST Edits Are Unscalable
+> AST editing works beautifully for one specific codebase and **completely breaks** for the next. A genuine coding agent absolutely must not care whether the target file is Python or TOML or Rust or JavaScript.
+
+### The Old_Text / New_Text Format Wins
+
+The **`old_text` / `new_text` format** elegantly sidesteps absolutely ALL of these issues. The model quotes a generous enough surrounding context to make `old_text` **unique within the file**, the harness performs a literal `str::replacen(old_text, new_text, 1)` operation, and the result is **either a cleanly successful change OR a cleanly reported failure** ("old_text not found" / "old_text matched more than once"). **Both** of these outcomes are things the model can effectively recover from on the very next turn.
+
+### The Critical Gotcha
+
+The one genuine gotcha: if `old_text` is deliberately **not unique** within the file, the tool automatically replaces the **first occurrence only**. In `rust_toy_agent`'s implementation, this is explicit: `replacen(_, _, 1)` — precisely **one replacement**. A more defensive version would eagerly error out and demand more surrounding context from the model, and most modern agents absolutely do take this approach.
+
+> **The Professional Insight:** Failing **loudly and clearly** is almost always **superior** to doing something that seems plausible but may be incorrect.
+
+---
+
+## 4.4 Shaping Inputs: What Makes an Exceptional Schema
+
+Let us examine the `read_file` input schema very carefully:
 
 ```json
 "properties": {
@@ -151,42 +147,25 @@ Look at `read_file`:
 "required": ["path"]
 ```
 
-One required field, one optional. Observations:
+### Three Essential Observations
 
-1. **`path` is a string, not an array of strings.** The model
-   *wants* to batch sometimes — "read these five files" — and
-   you could support it. But the cost is an output format that
-   combines five file contents into one blob, and now the model
-   has to parse your delimiters. Keep tools single-purpose and
-   let the model make N calls. The protocol supports multiple
-   tool_use blocks per round (see Chapter 3), so this is cheap.
+1. **`path` is a single string, NOT an array of strings** (highlighted in **blue**). The model *wants* to batch operations sometimes — requesting "read these five files" is a natural pattern. However, the genuine cost is that you must now design an **output format** that combines five distinct file contents into a single blob, and now the model must parse your custom delimiters intelligently. **Keep tools single-purpose and let the model make N independent calls.** The protocol already supports multiple tool_use blocks per single round (see Chapter 3), so this approach is genuinely cheap.
 
-2. **`limit` is optional, not defaulted.** The model decides when
-   it wants a bounded read. If you default to, say, 500 lines,
-   you make two wrong choices at once: a ceiling the model can't
-   raise, and a floor that wastes tokens for small files.
-   Optional-with-no-default is almost always the right pattern.
+2. **`limit` is optional with ABSOLUTELY NO default value** (highlighted in **green**). The model decides precisely when it wants a bounded read. If you default to, for example, 500 lines, you make **TWO wrong choices** at exactly the same time: a ceiling the model CANNOT raise AND a floor that wastes tokens for trivially small files. **Optional-with-no-default is almost always the correct pattern.**
 
-3. **There is no `offset`.** We do not support pagination. The
-   harness caps output at 50 KB and that is the end of the
-   conversation — if the file is bigger, the model can use
-   `bash` with `sed -n`. Pagination sounds helpful but adds a
-   stateful two-step that the model often gets wrong; we let
-   `bash` carry that weight.
+3. **There is absolutely NO `offset` field** (highlighted in **purple**). We do NOT support pagination. The harness intelligently caps output at 50 KB total and considers that conversation complete — if the target file genuinely exceeds this limit, the model can always use `bash` with `sed -n` to perform its own pagination. Pagination **sounds helpful** but adds a new **stateful two-step** that the model frequently gets wrong; we deliberately let `bash` carry that weight instead.
 
-The north star when shaping an input schema: **every argument
-should have a clear, non-overlapping job, and every optional
-argument should have a reason to be optional**. If you find
-yourself writing a tool with six optional fields, you probably
-have two or three tools fused together. Split them.
+> **The North Star Principle:** Every single argument in an input schema should have a clear, definitively non-overlapping job, and **every optional argument should have a specific, deliberate reason to be optional**. If you find yourself writing a tool with six or seven optional fields, you almost certainly have **two or three separate tools fused together** that should be deliberately split apart.
 
-## 4.5 Shaping Outputs: What the Model Sees
+---
 
-A tool's output is a string — the `content` of a `tool_result`
-block. What goes in that string is one of the most consequential
-design choices in agent engineering.
+## 4.5 Shaping Outputs: What the Model Actually Sees
 
-`rust_toy_agent`'s `run_bash` returns something like:
+A tool's output is fundamentally a string — the `content` field of a `tool_result` block. **What goes into that string** is one of the most consequential design choices in the entirety of agent engineering.
+
+### The run_bash Output Format
+
+`rust_toy_agent`'s `run_bash` tool returns output formatted exactly like this:
 
 ```
 $ git status
@@ -198,53 +177,41 @@ nothing to commit, working tree clean
 (exit 0)
 ```
 
-Three features worth copying:
+This format contains **three essential features** that are absolutely worth copying faithfully:
 
-1. **The command is echoed at the top.** The model sees `$ git
-   status` and knows exactly which call produced which output —
-   even if it dispatched three `bash` calls in one round.
-2. **Stdout and stderr are interleaved** (or clearly labelled if
-   separated). Many tools write status to stderr and content to
-   stdout, and a model that only sees stdout will be baffled by
-   `ssh`'s "Are you sure you want to continue connecting?" prompt
-   that lives on stderr.
-3. **The exit code is explicit.** `(exit 0)` or `(exit 1)` or
-   `(timeout)`. Do not rely on the model guessing from the text
-   whether the command succeeded. It will guess wrong in the
-   interesting cases, which are exactly the ones where you need
-   it to be right.
+| Feature | Why It Matters |
+|---------|-------------|
+| **The command is echoed at the top** | The model sees exactly `$ git status` and knows precisely which call produced which output — critical when the model dispatched three different `bash` calls in a single round |
+| **Stdout and stderr are clearly interleaved** (or labelled if separated) | Many tools write status information to stderr and actual content to stdout. A model that only sees stdout will be completely baffled by `ssh`'s "Are you sure you want to continue connecting?" prompt that lives on stderr |
+| **Exit code is absolutely explicit** | `(exit 0)` or `(exit 1)` or `(timeout)`. Never rely on the model guessing from the text whether the command succeeded — especially in the genuinely interesting cases where precision matters most |
 
-Outputs from `read_file` follow the same spirit:
+### The read_file Output Format
+
+`read_file` outputs follow the identical philosophical spirit:
 
 ```
-src/agent_loop.rs (1-200 of 400 lines, 12_345 bytes):
+src/agent_loop.rs (lines 1-200 of 400 total, 12,345 bytes):
    1  //! agent_loop.rs
    2  ...
 ```
 
-Line numbers on each line, the range in the header, and a byte
-count for situations where line counts lie (binary files, very
-long single-line files). This is the same output format every
-modern coding agent uses, give or take some decoration, because
-models reference files by line number in their reasoning and they
-need the numbers to match.
+This format includes **line numbers on literally every line**, the specific range in the header, and an actual **byte count** for situations where line counts are genuinely misleading (binary files, extremely long single-line files). **Every single modern coding agent uses this format**, give or take minor decoration, precisely because models reference files by line number in their reasoning and they absolutely need those numbers to match.
 
-One more rule: **truncate, and say you truncated.** `rust_toy_agent`
-caps tool output at `MAX_TOOL_OUTPUT_BYTES` (50 KB). When it hits
-the cap, the output ends with:
+### The Mandatory Truncation Notice
+
+**One more absolutely critical rule:** **Truncate, and explicitly SAY that you truncated.** `rust_toy_agent` caps tool output at `MAX_TOOL_OUTPUT_BYTES` (50 KB). When it hits this hard cap, the output ends with the explicit notice:
 
 ```
-... (output truncated, 1_234_567 bytes total)
+... (output truncated, 1,234,567 bytes total)
 ```
 
-The model needs to know *that* it was truncated and *how much*
-was dropped. Without the notice it will happily plan its next
-move based on an incomplete view. With the notice, it narrows its
-search on the next turn — usually by adding a `grep` or a `head`.
+The model absolutely needs to know **THAT truncation occurred** and **HOW MUCH data was dropped** — without this explicit notice, it will happily plan its next move based on a fundamentally incomplete view. **With** the truncation notice, the model narrows its search on the next turn — almost always by adding a `grep` or a `head` command to be more specific.
 
-## 4.6 Dispatch: The Router
+---
 
-Here is the body of `dispatch_tools`:
+## 4.6 The Dispatcher: The Router Mechanism
+
+Here is the core body of the `dispatch_tools` function:
 
 ```rust
 pub fn dispatch_tools(
@@ -268,31 +235,21 @@ pub fn dispatch_tools(
 }
 ```
 
-Two important things:
+### Two Absolutely Essential Observations
 
-1. **The dispatcher returns an `Option<String>` and a `bool`.** The
-   bool is the "was this the todo tool" flag we met in Chapter 3,
-   used by the nag logic. The option distinguishes "unknown tool"
-   from "known tool that produced empty output." **Do not conflate
-   these two cases.** An unknown-tool response should tell the
-   model the tool does not exist; an empty-output response should
-   say `(no output)` or similar.
+1. **The dispatcher returns BOTH an `Option<String>` AND a `bool`** (highlighted in **blue**). The boolean is the crucial "was this the todo tool" flag we encountered directly in Chapter 3's nag logic. The option absolutely distinguishes "unknown tool" error from "known tool that produced empty output." **Never conflate these two genuinely different cases.**
 
-2. **Unknown tools do not panic.** If the model invents a tool
-   name — which it does, especially under stress — the harness
-   returns `Unknown tool: {name}` and the loop continues. The
-   model sees the error and typically picks the right tool on
-   the next turn. A panic would end the session with a
-   stack trace the model can't read.
+2. **Unknown tools absolutely never panic** (highlighted in **green**). If the model invents a tool name — which it does, especially under stress situations — the harness gracefully returns the string `Unknown tool: {name}` and the loop continues smoothly. The model sees the clear error and typically picks the absolutely correct tool on the very next turn. A panic would immediately end the entire session with a cryptic stack trace that the model absolutely cannot read or recover from.
 
-The dispatcher is deliberately small. Every tool gets a `match`
-arm and a one-line call. If you find yourself writing complex
-logic inside the dispatcher, you are conflating routing with
-running — split them, and let the dispatcher do one thing.
+### The Deliberate Simplicity
 
-## 4.7 The Parent/Child Tool Split
+**The dispatcher is deliberately, absolutely small.** Every tool gets a single `match` arm and a one-line function call. If you discover yourself writing complex routing logic inside the dispatcher, you are fundamentally conflating **routing** (which tool to call) with **running** (actually executing the tool) — split them clearly, and let the dispatcher perform only ONE thing.
 
-Look near the bottom of `tools.rs`:
+---
+
+## 4.7 The Parent/Child Tool Split: Role-Based Tool Sets
+
+Examine carefully the definitions near the bottom of `tools.rs`:
 
 ```rust
 pub fn child_agent_tools() -> Vec<Json> {
@@ -300,34 +257,27 @@ pub fn child_agent_tools() -> Vec<Json> {
 }
 
 pub fn parent_agent_tools() -> Vec<Json> {
-    // same four + tool_todo() + tool_subagent() + ...
+    // Exactly the four child tools PLUS: tool_todo(), tool_subagent(), tool_background()
 }
 ```
 
-The parent agent and its subagents see *different* tool sets.
-Subagents get the basic file tools. Only the parent gets `todo`,
-`subagent` (to spawn further children), and the background-task
-tools. Why?
+**The parent agent and its subagents see RADICALLY different tool sets.** Subagents receive only the **basic file tools**. ONLY the parent receives access to `todo`, `subagent` (for spawning further children), and the background-task tools.
 
-* **Subagents have short lifetimes** (capped at 30 turns, usually
-  shorter). Planning tools are overkill for one-shot tasks.
-* **Only one level of subagents** keeps the tree manageable. If
-  every subagent could spawn more subagents, you get fan-out
-  explosions and runaway API bills.
-* **Fewer tools, faster responses.** The tool list goes into every
-  prompt. Removing the three or four tools a subagent does not
-  need shaves dozens of tokens off every call.
+### The Precise Reasoning
 
-Tool sets are part of the agent's identity. A parent and a child
-are not two instances of the same agent; they are two different
-agents with overlapping toolboxes. Think about tool scoping
-deliberately — it is a free way to give the model a clearer idea
-of what role it is playing right now.
+| Reason | Explanation |
+|--------|-------------|
+| **Subagents have inherently short lifetimes** | They are capped at approximately 30 turns, typically running much shorter. Planning tools are genuine overkill for these one-shot tasks. |
+| **Only one level of subagents keeps the tree manageable** | If absolutely every subagent could spawn more subagents, you would get exponential fan-out explosions and completely runaway API billing costs. |
+| **Fewer tools, faster responses** | The complete tool list gets inserted into absolutely EVERY prompt (see Chapter 3). Removing the three or four tools that a subagent genuinely does not need shaves dozens of precious tokens off every single LLM call. |
 
-## 4.8 The Runners: Safety First
+> **The Insight:** Tool sets are fundamentally a component of the agent's identity. A parent agent and a child subagent are **NOT two instances of the identical agent** — they are **two completely different agents with overlapping but distinct toolboxes**. Think about tool scoping deliberately — it is essentially a **free way** to give the model a considerably clearer idea of precisely **what role it is playing** at any given moment.
 
-Each tool's runner lives in `tool_runners.rs`. They all begin
-with the same incantation:
+---
+
+## 4.8 The Runners: Safety as an Absolute Non-Negotiable Priority
+
+Each tool's runner lives in `tool_runners.rs`. They absolutely all begin with **the identical foundational pattern**:
 
 ```rust
 pub fn run_read(path: &str, limit: Option<usize>, workdir: &WorkdirRoot)
@@ -337,57 +287,50 @@ pub fn run_read(path: &str, limit: Option<usize>, workdir: &WorkdirRoot)
         Ok(p) => p,
         Err(e) => return format!("Error: {e}"),
     };
-    // ... actually read the file ...
+    // ... now actually read the file in safety ...
 }
 ```
 
-`safe_path` is the sandbox: it takes a user-supplied path, joins
-it to the workdir, canonicalizes it, and refuses anything that
-escapes the workdir root. We spend all of Chapter 5 on how this
-works and why it is necessary. The thing to note now is the
-*shape*: every runner starts by resolving paths through
-`safe_path`, and every failure returns a string error rather than
-panicking or crashing.
+The `safe_path` function is the cornerstone of our **sandboxing strategy**: it takes a user-supplied path, joins it carefully to the designated workdir, canonicalizes the result to resolve any `..` or symlinks, and **absolutely refuses** any path that would escape the workdir root. We will spend the entirety of Chapter 5 comprehensively exploring how this sandboxing works and precisely why it is absolutely non-negotiable. The thing to absorb right now is the **essential shape**: **every single runner** starts by resolving paths through `safe_path`, and absolutely **every failure** returns a properly formatted string error rather than panicking or crashing.
 
-The single hardest lesson in agent tool design is this:
+### The Hardest Lesson in Agent Tool Design
 
-> **A tool runner must never panic, never hang indefinitely, and
-> never modify state outside the workdir. Everything else is
-> negotiable.**
+**The single hardest lesson in all of agent tool design is this absolute principle:**
 
-Not "should not." Not "tries not to." Must not. Every panic is a
-dead session, every hang is a dead harness process, and every
-out-of-workdir write is a security bug. The five runners in
-`rust_toy_agent` collectively enforce these three invariants, and
-so does every production agent you will ever look at.
+> **A tool runner MUST never panic, MUST never hang indefinitely, and MUST never modify state outside the workdir. Everything else is genuinely negotiable.**
 
-## 4.9 Exercises
+This is NOT "should not." This is NOT "tries not to." It is an absolute **MUST NOT**:
 
-1. Add a sixth tool, `list_directory`, with input `{path}` and
-   output a flat listing. Before you implement it, write down
-   three reasons why it might *not* be worth adding (hint:
-   reread §4.2). Still want it? Write the schema.
+- **Every panic** is an **immediately dead session** — the model cannot recover
+- **Every hang** is an **immediately dead harness process** — needing manual restart
+- **Every out-of-workdir write** is definitively a **security vulnerability** — potentially severe
 
-2. The `bash` tool currently runs with `env_clear` and only
-   allows a specific list of environment variables through.
-   Open `tool_runners.rs` and find the allowlist. Would you
-   add anything? Would you remove anything? Justify each.
+The five runners in `rust_toy_agent` absolutely collectively enforce these three invariant rules, and **every production agent** you will ever examine enforces the identical three invariants.
 
-3. `edit_file` replaces the first occurrence of `old_text`. Add
-   a new variant, `edit_file_all`, that replaces every
-   occurrence. Now argue the opposite case — that the new tool
-   should not exist and the existing tool should instead error
-   if `old_text` matches more than once. Which design makes
-   more mistakes recoverable?
+---
 
-4. Sketch the JSON schema for a `git_diff` tool. Then decide
-   whether to add it to the catalog or leave the job to `bash`.
-   Write down your reasoning.
+## Chapter 4 Summary and Transition
 
-5. Read the subagent tool list (`child_agent_tools()`). Imagine
-   adding a `web_search` tool. Would it go in the parent list,
-   the child list, both, or neither? Why?
+In this chapter, we comprehensively covered:
 
-In Chapter 5 we follow the paranoid thread started in §4.8 and
-look at sandboxing: path traversal, canonicalization, environment
-allowlists, and the workdir root that anchors the whole system.
+1. **What precisely counts as a tool** — understanding the four essential components: name, description, input schema, and runner.
+
+2. **The exactly-five-tool discipline** — appreciating precisely why fewer tools is genuinely better, and how `bash` can and should consume most of what other frameworks over-complicate.
+
+3. **The edit_file design** — understanding why `old_text` / `new_text` literal replacement is the only format that actually works reliably at scale.
+
+4. **Input schema shaping** — learning the critical rules: single-purpose tools, optional-without-defaults, and why pagination almost always belongs in `bash`.
+
+5. **Output formatting** — understanding why explicit commands, exit codes, truncation notices, and line numbers in output absolutely matter.
+
+6. **The dispatcher pattern** — appreciating how routing must remain trivially simple while the runners do all the real work.
+
+7. **Parent/child tool splitting** — seeing how different agents can and should have deliberately different tool sets.
+
+8. **The absolute safety invariants** — internalizing that panics, hangs, and out-of-workdir modifications are the three unforgivable sins.
+
+In the **next chapter**, we will follow the paranoid thread begun here in Section 4.8 and comprehensively examine sandboxing: path traversal defense, canonicalization, environment variable allowlists, and the workdir root mechanism that anchors the entire system.
+
+---
+
+**Next:** Chapter 5 — Sandboxing, Path Safety, and the Workdir Root
