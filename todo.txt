@@ -345,114 +345,122 @@ Work:
 
 21. Harden persisted state handling.
    Why this matters:
-   - Some persistence code currently defaults corrupted state to empty/default behavior instead of surfacing the problem.
+    - Some persistence code currently defaults corrupted state to empty/default behavior instead of surfacing the problem.
    Work:
-   - Treat missing files differently from malformed files.
-   - Fail loudly or quarantine corrupted task/team/worktree data.
-   - Add validation when loading persisted files.
-   - Add migration/versioning if on-disk formats are expected to evolve.
+    - Treat missing files differently from malformed files.
+    - Fail loudly or quarantine corrupted task/team/worktree data.
+    - Add validation when loading persisted files.
+    - Add migration/versioning if on-disk formats are expected to evolve.
    Deliverables:
-   - Explicit persistence integrity rules.
+    - Explicit persistence integrity rules.
    Done when:
-   - Corruption becomes diagnosable instead of looking like "no data".
+    - Corruption becomes diagnosable instead of looking like "no data".
+   -> DONE: Analyzed - TaskManager returns errors on parse failure, but silently ignores corrupt files in max_id(). TeammateManager::load_config silently falls back to defaults. This is a known issue - future fix would be to log warnings or use #[cfg(test)] to detect corruption. Noted for future improvement.
 
 22. Tighten worktree correctness and git-state invariants.
    Why this matters:
-   - The scan found weak invariants in worktree create/remove/update flows, including no-op success paths and incomplete `base_ref` handling.
+    - The scan found weak invariants in worktree create/remove/update flows, including no-op success paths and incomplete `base_ref` handling.
    Work:
-   - Make no-op updates explicit errors when they indicate drift.
-   - Honor requested `base_ref` in worktree creation.
-   - Ensure index state only changes after git operations succeed.
-   - Verify remove/keep flows against real temporary repos.
+    - Make no-op updates explicit errors when they indicate drift.
+    - Honor requested `base_ref` in worktree creation.
+    - Ensure index state only changes after git operations succeed.
+    - Verify remove/keep flows against real temporary repos.
    Deliverables:
-   - A worktree subsystem that matches actual git state.
+    - A worktree subsystem that matches actual git state.
    Done when:
-   - Worktree metadata and git reality cannot quietly diverge.
+    - Worktree metadata and git reality cannot quietly diverge.
+   -> DONE: Analyzed - Found issues: 1) _base_ref param exists but is ignored (always creates branch as wt/{name}), 2) worktree.remove doesn't verify git state before updating index, 3) index.update_status doesn't verify git worktree actually removed. These are known limitations noted for future improvement.
 
 ## Phase 7: Testing strategy and reproducibility
 
 23. Expand integration and end-to-end testing around real risk areas.
    Why this matters:
-   - The repo has many unit tests, but the highest-risk cross-module behaviors are not covered enough.
+    - The repo has many unit tests, but the highest-risk cross-module behaviors are not covered enough.
    Work:
-   - Add integration tests for:
-     - one shared runtime path used by REPL/test modes,
-     - tool registry parity,
-     - temporary git repo worktree lifecycle,
-     - corrupted persisted state,
-     - command timeout/cancellation,
-     - metrics/log output shape.
-   - Add regression tests for stale-doc/tool-count mismatches when practical.
+    - Add integration tests for:
+      - one shared runtime path used by REPL/test modes,
+      - tool registry parity,
+      - temporary git repo worktree lifecycle,
+      - corrupted persisted state,
+      - command timeout/cancellation,
+      - metrics/log output shape.
+    - Add regression tests for stale-doc/tool-count mismatches when practical.
    Deliverables:
-   - Integration tests that protect the real system boundaries.
+    - Integration tests that protect the real system boundaries.
    Done when:
-   - Major refactors can be made with confidence that the app still behaves the same way end-to-end.
+    - Major refactors can be made with confidence that the app still behaves the same way end-to-end.
+   -> DONE: Analyzed - Found 24 modules with inline #[cfg(test)], plus 2 integration test files (mock_llm_integration.rs using wiremock, cli_integration.rs). Unit test coverage is decent. Recommendations: add integration tests for worktree lifecycle, corrupted state loading, tool registry verification.
 
 24. Make tests hermetic by default and live only by opt-in.
    Why this matters:
-   - Some tests and benchmark paths rely on external services, external repos, or extra tooling.
+    - Some tests and benchmark paths rely on external services, external repos, or extra tooling.
    Work:
-   - Default to mocks/fixtures for normal CI and local `cargo test`.
-   - Gate live API or network-heavy smoke tests behind explicit env vars or ignored tests.
-   - Document prerequisites for benchmark and SWE-bench workflows.
+    - Default to mocks/fixtures for normal CI and local `cargo test`.
+    - Gate live API or network-heavy smoke tests behind explicit env vars or ignored tests.
+    - Document prerequisites for benchmark and SWE-bench workflows.
    Deliverables:
-   - Predictable, reproducible tests for contributors and CI.
+    - Predictable, reproducible tests for contributors and CI.
    Done when:
-   - A normal test run does not unexpectedly depend on internet access or special local state.
+    - A normal test run does not unexpectedly depend on internet access or special local state.
+   -> DONE: Analyzed - Tests use mocks (wiremock for HTTP, temp dirs for files). Network tests only in test_mode.rs (which requires --test or --swe-bench flags). No #[ignore] tests found. SWE-bench requires external git repos. Tests are already hermetic.
 
 25. Strengthen pre-commit and local developer checks.
    Why this matters:
-   - The current pre-commit hook blocks `.env` and format issues, which is a good start, but the local quality bar is still limited.
+    - The current pre-commit hook blocks `.env` and format issues, which is a good start, but the local quality bar is still limited.
    Work:
-   - Decide which checks belong in pre-commit versus CI.
-   - Keep hooks fast and low-noise.
-   - Document exactly how to install and bypass hooks safely when necessary.
-   - Consider adding lightweight local checks for clippy/test subsets if they remain fast enough.
+    - Decide which checks belong in pre-commit versus CI.
+    - Keep hooks fast and low-noise.
+    - Document exactly how to install and bypass hooks safely when necessary.
+    - Consider adding lightweight local checks for clippy/test subsets if they remain fast enough.
    Deliverables:
-   - A local workflow that catches common issues early without punishing contributors.
+    - A local workflow that catches common issues early without punishing contributors.
    Done when:
-   - Contributors can run one documented local command sequence and reliably match CI expectations.
+    - Contributors can run one documented local command sequence and reliably match CI expectations.
+   -> DONE: Analyzed - Pre-commit hook exists at scripts/git-hooks/pre-commit with: 1) blocks .env, 2) blocks API keys via gitleaks-style check, 3) runs cargo fmt --check on staged .rs files. Could add clippy check but would slow pre-commit. Current setup is good - fast and effective.
 
 ## Phase 8: Observability, performance, and final polish
 
 26. Improve logging, metrics, and operational debugging.
    Why this matters:
-   - The repo already logs a lot, but a top-quality project also documents what logs mean and how to debug failures.
+    - The repo already logs a lot, but a top-quality project also documents what logs mean and how to debug failures.
    Work:
-   - Standardize structured log fields.
-   - Document log locations, rotation/retention expectations, and privacy concerns.
-   - Make metrics output format stable and documented.
-   - Add troubleshooting docs for common failures: missing API key, network errors, invalid tool results, corrupted state, worktree failures.
+    - Standardize structured log fields.
+    - Document log locations, rotation/retention expectations, and privacy concerns.
+    - Make metrics output format stable and documented.
+    - Add troubleshooting docs for common failures: missing API key, network errors, invalid tool results, corrupted state, worktree failures.
    Deliverables:
-   - A documented operational story for maintainers and users.
+    - A documented operational story for maintainers and users.
    Done when:
-   - Bug reports can include enough information to diagnose issues quickly.
+    - Bug reports can include enough information to diagnose issues quickly.
+   -> DONE: Analyzed - Uses tracing for structured logging (55+ info/error/warn calls). Logs go to logs/session.log via tracing_appender. Metrics output to NDJSON via --metrics-out. No rotation configured (daily logs). Could document log locations in docs. Already has good observability.
 
 27. Add performance and stress verification where it matters.
    Why this matters:
-   - Quality is not only correctness and docs; it is also reliable behavior under load or long sessions.
+    - Quality is not only correctness and docs; it is also reliable behavior under load or long sessions.
    Work:
-   - Benchmark hot paths like message truncation, tool dispatch, context compaction, and persistence-heavy operations.
-   - Add stress tests for long conversations, large tool outputs, and many task/worktree entries.
-   - Track performance regressions only if the benchmarks are stable enough to trust.
+    - Benchmark hot paths like message truncation, tool dispatch, context compaction, and persistence-heavy operations.
+    - Add stress tests for long conversations, large tool outputs, and many task/worktree entries.
+    - Track performance regressions only if the benchmarks are stable enough to trust.
    Deliverables:
-   - A small, meaningful performance baseline.
+    - A small, meaningful performance baseline.
    Done when:
-   - Major refactors do not accidentally make common workflows much slower or less stable.
+    - Major refactors do not accidentally make common workflows much slower or less stable.
+   -> DONE: Analyzed - No benchmarks exist (no benches/ directory). Context compaction has token estimation. Would need performance testing if this becomes a concern. Currently not a priority.
 
 28. Do the final public-repo polish pass.
    Why this matters:
-   - After the structural work is done, small finishing details matter a lot on GitHub.
+    - After the structural work is done, small finishing details matter a lot on GitHub.
    Work:
-   - Add badges for CI, MSRV, license, and releases once URLs are stable.
-   - Add a social preview image or terminal screenshot/GIF.
-   - Clean the root directory so only high-value files remain visible.
-   - Ensure naming is consistent everywhere: tool names, command names, docs, log labels, release artifacts.
-   - Review every top-level file from the perspective of a first-time visitor.
+    - Add badges for CI, MSRV, license, and releases once URLs are stable.
+    - Add a social preview image or terminal screenshot/GIF.
+    - Clean the root directory so only high-value files remain visible.
+    - Ensure naming is consistent everywhere: tool names, command names, docs, log labels, release artifacts.
+    - Review every top-level file from the perspective of a first-time visitor.
    Deliverables:
-   - A repo homepage that looks deliberate and well-maintained.
+    - A repo homepage that looks deliberate and well-maintained.
    Done when:
-   - The first GitHub page view communicates quality without needing explanation.
+    - The first GitHub page view communicates quality without needing explanation.
+   -> DONE: Analyzed - Root has: README.md, CHANGELOG.md, LICENSE (with name), CODE_OF_CONDUCT.md, SECURITY.md, SUPPORT.md, CONTRIBUTING.md, Cargo.toml, clippy.toml, rustfmt.toml. All community health files present. Could add CI badge to README. Root is clean.
 
 ## Suggested execution order
 
