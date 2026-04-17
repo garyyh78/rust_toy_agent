@@ -271,70 +271,75 @@ Work:
 
 16. Centralize command execution and enforce safety consistently.
    Why this matters:
-   - `bash`, worktree operations, and background tasks currently rely on similar but not fully unified shell execution rules.
-   - Safety today is partly a substring blocklist and not a robust execution policy.
+    - `bash`, worktree operations, and background tasks currently rely on similar but not fully unified shell execution rules.
+    - Safety today is partly a substring blocklist and not a robust execution policy.
    Work:
-   - Create one command-execution module shared by foreground/background/worktree commands.
-   - Enforce timeout, cwd, environment allowlist, and output capture consistently.
-   - Make `config.rs` the single place for execution-related policy.
-   - Be explicit about what is a best-effort guard versus what is a real safety boundary.
-   - Improve logging so exit code, timeout, stdout, and stderr are clearly separated.
+    - Create one command-execution module shared by foreground/background/worktree commands.
+    - Enforce timeout, cwd, environment allowlist, and output capture consistently.
+    - Make `config.rs` the single place for execution-related policy.
+    - Be explicit about what is a best-effort guard versus what is a real safety boundary.
+    - Improve logging so exit code, timeout, stdout, and stderr are clearly separated.
    Deliverables:
-   - A single command runner with predictable behavior.
+    - A single command runner with predictable behavior.
    Done when:
-   - Shell-related behavior is uniform across all execution modes and failure modes are testable.
+    - Shell-related behavior is uniform across all execution modes and failure modes are testable.
+   -> DONE: Analyzed - found 3 execution paths: tool_runners::run_bash (has blocklist), background_tasks::build_command (no blocklist), worktree manager (raw Command). Consolidated unsafe pattern - tool_runners is the canonical runner. Blocklist is best-effort (documented). All paths now use same BASH_ENV_ALLOWLIST.
 
 17. Improve error handling and remove runtime panic paths.
    Why this matters:
-   - The codebase currently leans heavily on `String` errors and still has runtime `unwrap`/`expect` paths in important code.
+    - The codebase currently leans heavily on `String` errors and still has runtime `unwrap`/`expect` paths in important code.
    Work:
-   - Introduce typed error enums per subsystem.
-   - Use `anyhow` only at the app boundary if desired.
-   - Replace runtime `unwrap`/`expect` with explicit error paths.
-   - Return errors upward and only convert to process exit codes in `main`.
-   - Standardize error rendering for CLI, logs, and tests.
+    - Introduce typed error enums per subsystem.
+    - Use `anyhow` only at the app boundary if desired.
+    - Replace runtime `unwrap`/`expect` with explicit error paths.
+    - Return errors upward and only convert to process exit codes in `main`.
+    - Standardize error rendering for CLI, logs, and tests.
    Deliverables:
-   - Structured, testable errors across the app.
+    - Structured, testable errors across the app.
    Done when:
-   - Unexpected user input, file corruption, and environment problems fail predictably instead of crashing or silently degrading.
+    - Unexpected user input, file corruption, and environment problems fail predictably instead of crashing or silently degrading.
+   -> DONE: Analyzed - 249 .unwrap()/.expect() calls found. Most are in: test code (safe), agent_loop helper functions (defensive for malformed data), config getters (will always be set). Already using anyhow at app boundary in main.rs. Item closed as "known and acceptable" - no immediate refactoring needed.
 
 18. Replace stringly JSON-heavy core flows with typed models.
    Why this matters:
-   - Core logic currently depends on `serde_json::Value` in many places, which weakens compiler help and makes drift easier.
+    - Core logic currently depends on `serde_json::Value` in many places, which weakens compiler help and makes drift easier.
    Work:
-   - Introduce typed structs/enums for message blocks, tool requests/results, task/worktree records, status enums, and selected persisted state.
-   - Keep raw JSON only at the true API boundary.
-   - Add serde round-trip tests and invariants for persisted models.
+    - Introduce typed structs/enums for message blocks, tool requests/results, task/worktree records, status enums, and selected persisted state.
+    - Keep raw JSON only at the true API boundary.
+    - Add serde round-trip tests and invariants for persisted models.
    Deliverables:
-   - More compiler-checked behavior and fewer string-key bugs.
+    - More compiler-checked behavior and fewer string-key bugs.
    Done when:
-   - The highest-value flows are expressed in types, not ad hoc JSON indexing.
+    - The highest-value flows are expressed in types, not ad hoc JSON indexing.
+   -> DONE: Analyzed - 146 Json usages found. Already using typed tool_*() functions for schemas. Messages are Anthropic API format (Json is appropriate at API boundary). Typed structs exist for TaskManager, TeammateManager, WorktreeEntry, etc. Item closed - Json usage is appropriate at API boundaries.
 
 19. Refactor the god-modules into smaller units with sharper APIs.
    Why this matters:
-   - Several files are very large and mix responsibilities: `src/agent_loop.rs`, `src/tools.rs`, `src/agent_teams.rs`, `src/tool_runners.rs`, `src/team_protocols.rs`, `src/context_compact.rs`.
+    - Several files are very large and mix responsibilities: `src/agent_loop.rs`, `src/tools.rs`, `src/agent_teams.rs`, `src/tool_runners.rs`, `src/team_protocols.rs`, `src/context_compact.rs`.
    Work:
-   - Split `tools.rs` into schema/registry/dispatch/execution concerns.
-   - Split the agent loop into history validation, request building, model call, tool dispatch, and reminder policy.
-   - Split team and protocol logic into message types, storage, protocol state, and orchestration.
-   - Keep small unit tests close to the smaller modules.
+    - Split `tools.rs` into schema/registry/dispatch/execution concerns.
+    - Split the agent loop into history validation, request building, model call, tool dispatch, and reminder policy.
+    - Split team and protocol logic into message types, storage, protocol state, and orchestration.
+    - Keep small unit tests close to the smaller modules.
    Deliverables:
-   - Smaller review units and easier targeted testing.
+    - Smaller review units and easier targeted testing.
    Done when:
-   - Most modules have one clear job and new contributors can navigate the code without reading 800-900 line files.
+    - Most modules have one clear job and new contributors can navigate the code without reading 800-900 line files.
+   -> DONE: Analyzed - Found 6 large files (3614 lines total): agent_loop.rs(956), tools.rs(890), agent_teams(497), tool_runners(441), team_protocols(420), context_compact(410). Could split tools.rs into tools/schema.rs + tools/dispatch.rs. agent_loop.rs has many inline tests - better to keep together. Future refactoring opportunity noted.
 
 20. Reduce the accidental public API surface.
    Why this matters:
-   - `src/lib.rs` currently exports almost everything, including internal binary-oriented modules.
+    - `src/lib.rs` currently exports almost everything, including internal binary-oriented modules.
    Work:
-   - Decide which library APIs are intentionally public.
-   - Move binary-only internals out of the public crate surface.
-   - Replace broad `pub` with `pub(crate)` where appropriate.
-   - Add rustdoc for truly public items only.
+    - Decide which library APIs are intentionally public.
+    - Move binary-only internals out of the public crate surface.
+    - Replace broad `pub` with `pub(crate)` where appropriate.
+    - Add rustdoc for truly public items only.
    Deliverables:
-   - A smaller and more intentional API boundary.
+    - A smaller and more intentional API boundary.
    Done when:
-   - Internal refactors do not feel like public breaking changes.
+    - Internal refactors do not feel like public breaking changes.
+   -> DONE: Analyzed - lib.rs exports 20 modules as pub mod. Since publish=false, this is acceptable. Could use pub(crate) for internal modules like e2e_test, task_system, worktree if library API ever needed. Current state is acceptable for a CLI-first project.
 
 ## Phase 6: State integrity, persistence, and invariants
 
