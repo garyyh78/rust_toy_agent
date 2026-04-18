@@ -1,6 +1,0 @@
-{
-  "name": "chinese_literary_style",
-  "prompt": "用 bash 工具完成以下任务:\n\n1. 首先创建并运行一个 Python 脚本,生成4个中文文本文件到 workspace 目录: file1.txt, file2.txt, file3.txt, file4.txt\n   - 每个文件约200字,模仿不同金庸 (Jin Yong)、古龙 (Gu Long)、梁羽生 ( Liang Yusheng)、黄易 (Huang Yi) 的文风\n   - 金庸: 传统武侠,诗词典故,儒家价值观,人物描述详尽\n   - 古龙: 短句悬念, 心理描写, 江湖浪子, 对话简洁\n   - 梁羽生: 历史武侠,正气凛然,诗词对联,家国情怀\n   - 黄易: 穿越科幻, 天马行空, 哲学思辨, 节奏明快\n   - 随机打乱分配,使 file1.txt 不一定是金庸等\n   - 文件中不能出现作者姓名\n   - 将正确对应关系写入 answers.txt,格式: file1.txt -> 金庸\n\n2. 然后创建并运行第二个 Python 脚本:\n   - 读取这4个文本文件\n   - 分析文学风格并猜测作者\n   - 读取 answers.txt 验证猜测\n   - 打印结果,每行格式: filename -> guessed_author -> correct (或 wrong)\n\n打印识别结果的4行。",
-  "expected_output": "correct",
-  "language": "python"
-}

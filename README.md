@@ -19,21 +19,6 @@ cargo run --release
 
 Type `q` or press Enter to quit.
 
-## Demo
-
-```
-$ cargo run --release
-> Write a Python program to sum 1 to n
-
-[Agent uses bash, write_file tools...]
-Done: created sum.py
-
-> Run it
-
-[Agent runs the program...]
-Result: 5050
-```
-
 ## Features
 
 - **Interactive REPL**: Chat with the agent in a terminal
@@ -58,47 +43,132 @@ Result: 5050
 | `load_skill` | Load skill by name |
 | `compact` | Compress conversation |
 
-## Safety
+## Architecture
 
-- Path sandboxing prevents escaping the workspace
-- Dangerous commands blocked: `rm -rf /`, `sudo`, etc.
-- Output truncated at 50KB
-- **Run in a sandboxed or disposable environment**
-
-## Requirements
-
-- Rust 1.75+
-- Anthropic API key (or compatible endpoint)
-
-## Installation
-
-### From source
-
-```bash
-cargo build --release
-./target/release/rust_toy_agent
+```
+src/
+├── main.rs              # Binary entry (REPL)
+├── lib.rs               # Library root
+├── llm_client.rs        # API client (Anthropic)
+├── logger.rs            # Session logging
+├── agent_loop.rs        # Core agent loop
+├── tools.rs             # Tool schema + dispatch
+├── tool_runners.rs      # Tool execution
+├── context_compact.rs   # Context compression
+├── subagent.rs          # Subagent spawning
+├── background_tasks.rs  # Fire-and-forget tasks
+└── worktree/            # Git worktree management
 ```
 
-### From GitHub releases
+### Execution Flow
 
-Download pre-built binaries from the releases page.
+```
+User prompt
+    │
+    ▼
+agent_loop (round N)
+    1. validate tool pairings
+    2. truncate old messages
+    3. build API request
+    4. POST to API
+    5. if tool_use:
+       dispatch tools
+       collect results
+       continue loop
+    ▼
+Final response
+```
 
-## Documentation
+## Configuration
 
-- [Configuration](docs/configuration.md)
-- [Architecture](docs/architecture.md)
-- [Testing](docs/testing.md)
-- [Security Model](docs/security-model.md)
+### Environment Variables
 
-## Development
+Create a `.env` file from the template:
 
 ```bash
-cargo test           # Run tests
+cp .env.example .env
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ANTHROPIC_API_KEY` | API key for Anthropic (or compatible) | - |
+| `MODEL_ID` | Model to use | `claude-sonnet-4-20250514` |
+| `ANTHROPIC_BASE_URL` | API endpoint | `https://api.anthropic.com` |
+| `ANTHROPIC_API_VERSION` | API version | `2023-06-01` |
+
+### Requirements
+
+- Rust 1.75+ (MSRV)
+- Anthropic API key (or compatible endpoint)
+
+### OS Support
+
+- macOS (Intel, Apple Silicon)
+- Linux (Ubuntu 22.04+)
+- FreeBSD
+
+## Security Model
+
+This project executes arbitrary shell commands. **Run in a sandboxed or disposable environment.**
+
+### Threat Model
+
+**In Scope:**
+- Shell command injection via LLM-generated commands
+- API key exposure
+- File system access beyond workspace
+- Long-running processes
+
+**Out of Scope:**
+- Social engineering
+- Physical access
+- Third-party services beyond API provider
+
+### Mitigations
+
+**Path Sandboxing:** `safe_path()` rejects paths that escape the workspace:
+- `/etc/passwd`
+- `../../etc/passwd`
+- `$HOME/.ssh/id_rsa`
+
+**Command Blocklist:** These patterns are blocked:
+- `rm -rf /`, `rm -rf ~`
+- `sudo`, `su`
+- `shutdown`, `reboot`
+- `> /dev/null` (output suppression)
+
+**Output Limits:** Tool output truncated at 50KB.
+
+**Conversation Truncation:** Last 8 rounds kept to prevent API overflow.
+
+### Recommendations
+
+1. Run in a sandbox: Disposable VM, container, or isolated directory
+2. Separate API keys: Use dedicated keys for agent work
+3. Review commands: Before running agent-output commands
+4. Limit permissions: Agent should only access what's needed
+5. Monitor logs: Check `logs/` for activity
+
+## Testing
+
+```bash
+cargo test           # All tests (~205 unit tests)
+cargo test <name>    # Specific test
+
+# E2E benchmark tests
+cargo run --release -- --test sum_1_to_n
+cargo run --release -- --test bug_fix
+
+# Development
 cargo fmt --check    # Check formatting
 cargo clippy         # Lint check
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+Tests are in `tests/` and `task_tests/`.
+
+## Documentation
+
+See `learning/` directory for the book on building coding agents.
 
 ## License
 
