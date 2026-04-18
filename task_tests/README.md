@@ -8,7 +8,6 @@ A collection of test cases for evaluating the coding agent's capabilities.
 |------|----------|-------------|
 | `api_mock` | Python | Parse JSON data, filter by score > 80, extract and sort names |
 | `bug_fix` | Python | Find and fix 3 bugs in a buggy Python script for palindrome counting |
-| `chinese_literary_style` | Python | Generate Chinese text mimicking 4 wuxia authors (金庸, 古龙, 梁羽生, 黄易), then detect styles |
 | `chinese_literary_style_5` | Python | Generate Chinese text mimicking 5 wuxia authors (金庸, 古龙, 梁羽生, 黄易, 温瑞安), then detect styles |
 | `csv_transform` | Python | Read CSV, compute total revenue for 'West' region |
 | `dependency_resolve` | Python | Implement topological sort on a dependency graph (A→B, A→C, B→D, C→D, D→E) |
