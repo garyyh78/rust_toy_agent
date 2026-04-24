@@ -31,3 +31,22 @@ Each test directory contains:
 The agent is given the prompt from `test.json` and must produce output matching `expected_output`.
 
 Test results are stored in `test_results/` as JSON files.
+
+## Latest Results (2026-04-24, MODEL_ID=claude-opus-4-6)
+
+| Test | Passed | Time (ms) | Tokens | Notes |
+|------|--------|-----------|--------|-------|
+| multiline_transform | ✓ | 15,534 | 4,102 | |
+| csv_transform | ✗ | 14,801 | 4,041 | Expected 47850, got 14000 (West region only) |
+| sum_1_to_n | ✓ | 5,218 | 2,406 | |
+| prime_sum | ✓ | 33,186 | 5,593 | |
+| regex_extractor | ✓ | 28,129 | 7,705 | |
+| fibonacci_sum | ✓ | 18,603 | 3,839 | |
+| dependency_resolve | ✓ | 11,855 | 3,540 | |
+| api_mock (json_parse) | ✗ | 11,920 | 3,900 | Expected alice,charlie, got all names (filter bug) |
+| graph_bfs | ✓ | 22,905 | 5,761 | |
+| bug_fix | ✓ | 181,315 | 66,209 | |
+| literary_style_detection | ✓ | 51,065 | 10,304 | |
+| chinese_literary_style_5 | ✓ | 77,148 | 27,773 | |
+
+**Summary:** 10 passed, 2 failed (83.3% pass rate)
