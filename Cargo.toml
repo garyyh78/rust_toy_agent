@@ -22,7 +22,7 @@ dotenvy = "0.15"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 dashmap = "6"
-notify = "6"
+notify = "8"
 wait-timeout = "0.2"
 git2 = "0.19"
 anyhow = "1"
